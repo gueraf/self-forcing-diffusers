@@ -22,6 +22,20 @@ from transformers import UMT5EncoderModel
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from self_forcing_diffusers.hf_assets import (
+    DEFAULT_SELF_FORCING_CHECKPOINT_FILENAME,
+    DEFAULT_SELF_FORCING_REPO_ID,
+    DEFAULT_WAN_CONFIG_FILENAME,
+    DEFAULT_WAN_REPO_ID,
+    DEFAULT_WAN_TEXT_ENCODER_FILENAME,
+    DEFAULT_WAN_TOKENIZER_SUBDIR,
+    DEFAULT_WAN_VAE_FILENAME,
+    resolve_self_forcing_checkpoint_path,
+    resolve_wan_model_config_path,
+    resolve_wan_text_encoder_weights_path,
+    resolve_wan_tokenizer_path,
+    resolve_wan_vae_path,
+)
 from self_forcing_diffusers.model_patches import apply_self_forcing_wan_model_patches
 
 
@@ -215,11 +229,8 @@ class FixedTextEncoder(torch.nn.Module):
 
 
 class UpstreamTextEncoder(torch.nn.Module):
-    def __init__(self, tokenizer_cls, text_encoder_factory, upstream_repo_path, device, output_device):
+    def __init__(self, tokenizer_cls, text_encoder_factory, tokenizer_path, text_encoder_weights_path, device, output_device):
         super().__init__()
-        model_dir = pathlib.Path(upstream_repo_path) / "wan_models" / "Wan2.1-T2V-1.3B"
-        tokenizer_path = model_dir / "google" / "umt5-xxl"
-        weights_path = model_dir / "models_t5_umt5-xxl-enc-bf16.pth"
         encoder_dtype = torch.float32 if str(device) == "cpu" else torch.bfloat16
 
         self.tokenizer = tokenizer_cls(name=str(tokenizer_path), seq_len=512, clean="whitespace")
@@ -229,7 +240,7 @@ class UpstreamTextEncoder(torch.nn.Module):
             dtype=encoder_dtype,
             device=torch.device("cpu"),
         ).eval().requires_grad_(False)
-        self.text_encoder.load_state_dict(torch.load(weights_path, map_location="cpu", weights_only=False))
+        self.text_encoder.load_state_dict(torch.load(text_encoder_weights_path, map_location="cpu", weights_only=False))
         self.text_encoder.to(device=device, dtype=encoder_dtype)
         self.device = _resolve_device(device)
         self.output_device = _resolve_device(output_device)
@@ -470,15 +481,22 @@ def _generate_diffusers_latents(
 def main():
     parser = argparse.ArgumentParser(description="Validate diffusers Self-Forcing against the original upstream repo")
     parser.add_argument("--upstream_repo_path", type=str, required=True)
-    parser.add_argument("--checkpoint_path", type=str, required=True)
+    parser.add_argument("--checkpoint_path", type=str, default=None)
+    parser.add_argument("--checkpoint_repo_id", type=str, default=DEFAULT_SELF_FORCING_REPO_ID)
+    parser.add_argument("--checkpoint_filename", type=str, default=DEFAULT_SELF_FORCING_CHECKPOINT_FILENAME)
     parser.add_argument("--diffusers_model_path", type=str, required=True)
     parser.add_argument("--text_encoder_source", type=str, choices=("upstream", "hf"), default="upstream")
     parser.add_argument("--text_encoder_path", type=str, default=None)
     parser.add_argument("--tokenizer_path", type=str, default=None)
     parser.add_argument("--prompt_embeds_path", type=str, default=None)
     parser.add_argument("--prompt_embeds_key", type=str, default="prompt_embeds")
-    parser.add_argument("--wan_model_config", type=str, required=True)
-    parser.add_argument("--vae_path", type=str, required=True)
+    parser.add_argument("--wan_model_config", type=str, default=None)
+    parser.add_argument("--vae_path", type=str, default=None)
+    parser.add_argument("--wan_repo_id", type=str, default=DEFAULT_WAN_REPO_ID)
+    parser.add_argument("--wan_config_filename", type=str, default=DEFAULT_WAN_CONFIG_FILENAME)
+    parser.add_argument("--wan_vae_filename", type=str, default=DEFAULT_WAN_VAE_FILENAME)
+    parser.add_argument("--wan_text_encoder_filename", type=str, default=DEFAULT_WAN_TEXT_ENCODER_FILENAME)
+    parser.add_argument("--wan_tokenizer_subdir", type=str, default=DEFAULT_WAN_TOKENIZER_SUBDIR)
     parser.add_argument("--prompt", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--device", type=str, default="cuda:0")
@@ -493,6 +511,24 @@ def main():
     output_dir = pathlib.Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    checkpoint_path = resolve_self_forcing_checkpoint_path(
+        args.checkpoint_path,
+        repo_id=args.checkpoint_repo_id,
+        filename=args.checkpoint_filename,
+    )
+    wan_model_config_path = resolve_wan_model_config_path(
+        args.wan_model_config,
+        repo_id=args.wan_repo_id,
+        filename=args.wan_config_filename,
+    )
+    wan_vae_path = resolve_wan_vae_path(
+        args.vae_path,
+        repo_id=args.wan_repo_id,
+        filename=args.wan_vae_filename,
+    )
+    resolved_tokenizer_path = None
+    resolved_text_encoder_path = None
+
     upstream_modules = _load_upstream_modules(args.upstream_repo_path)
     if args.prompt_embeds_path is not None:
         prompt_embeds = _load_prompt_embeds(args.prompt_embeds_path, key=args.prompt_embeds_key).to(
@@ -501,10 +537,21 @@ def main():
         conditional_dict = {"prompt_embeds": prompt_embeds}
     else:
         if args.text_encoder_source == "upstream":
+            resolved_tokenizer_path = resolve_wan_tokenizer_path(
+                args.tokenizer_path,
+                repo_id=args.wan_repo_id,
+                subdir=args.wan_tokenizer_subdir,
+            )
+            resolved_text_encoder_path = resolve_wan_text_encoder_weights_path(
+                args.text_encoder_path,
+                repo_id=args.wan_repo_id,
+                filename=args.wan_text_encoder_filename,
+            )
             text_encoder = UpstreamTextEncoder(
                 tokenizer_cls=upstream_modules["HuggingfaceTokenizer"],
                 text_encoder_factory=upstream_modules["umt5_xxl"],
-                upstream_repo_path=args.upstream_repo_path,
+                tokenizer_path=resolved_tokenizer_path,
+                text_encoder_weights_path=resolved_text_encoder_path,
                 device=args.text_encoder_device,
                 output_device=args.device,
             )
@@ -514,6 +561,8 @@ def main():
                     "`--text_encoder_path` and `--tokenizer_path` are required when `--text_encoder_source=hf` "
                     "unless `--prompt_embeds_path` is provided."
                 )
+            resolved_text_encoder_path = args.text_encoder_path
+            resolved_tokenizer_path = args.tokenizer_path
             text_encoder = HFTextEncoder(
                 tokenizer_cls=upstream_modules["HuggingfaceTokenizer"],
                 tokenizer_path=args.tokenizer_path,
@@ -529,12 +578,12 @@ def main():
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    AbsoluteWanVAEWrapper = _make_absolute_vae_wrapper(upstream_modules["_video_vae"], args.vae_path)
+    AbsoluteWanVAEWrapper = _make_absolute_vae_wrapper(upstream_modules["_video_vae"], wan_vae_path)
     ConfigInitWanDiffusionWrapper = _make_config_init_wrapper(
         upstream_modules["WanDiffusionWrapper"],
         upstream_modules["CausalWanModel"],
         upstream_modules["FlowMatchScheduler"],
-        args.wan_model_config,
+        wan_model_config_path,
     )
 
     latent_frames_per_chunk = (args.frames_per_chunk - 1) // 4 + 1
@@ -568,7 +617,7 @@ def main():
         vae=AbsoluteWanVAEWrapper(),
     )
     original_pipeline.generator.load_state_dict(
-        torch.load(args.checkpoint_path, map_location="cpu", weights_only=False)["generator_ema"]
+        torch.load(checkpoint_path, map_location="cpu", weights_only=False)["generator_ema"]
     )
     original_pipeline.generator.to(device=args.device, dtype=torch.bfloat16)
     original_pipeline.vae.to(device=args.device, dtype=torch.bfloat16)
@@ -635,6 +684,14 @@ def main():
         "num_frames": len(original_frames),
         "seed": args.seed,
         "renoise_seed": renoise_seed,
+        "resolved_assets": {
+            "checkpoint_path": checkpoint_path,
+            "wan_model_config": wan_model_config_path,
+            "vae_path": wan_vae_path,
+            "tokenizer_path": resolved_tokenizer_path,
+            "text_encoder_path": resolved_text_encoder_path,
+            "prompt_embeds_path": args.prompt_embeds_path,
+        },
         "latent_report": _latent_report(original_latents, diffusers_latents.cpu()),
         "video_psnr_db": _compute_psnr(original_frames, diffusers_frames),
         "framewise_psnr_db": {

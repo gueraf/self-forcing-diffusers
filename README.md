@@ -20,9 +20,10 @@ Convert a checkpoint:
 
 ```bash
 uv run python scripts/convert_self_forcing_to_diffusers.py \
-  --checkpoint_path /path/to/self_forcing_dmd.pt \
   --output_path ./artifacts/self_forcing_diffusers
 ```
+
+If `--checkpoint_path` is omitted, the script downloads `checkpoints/self_forcing_dmd.pt` from `gdhe17/Self-Forcing`.
 
 Run autoregressive generation:
 
@@ -40,13 +41,15 @@ Validate directly against the original upstream repo:
 ```bash
 uv run python scripts/validate_self_forcing_against_upstream.py \
   --upstream_repo_path /path/to/Self-Forcing \
-  --checkpoint_path /path/to/self_forcing_dmd.pt \
   --diffusers_model_path ./artifacts/self_forcing_diffusers \
-  --wan_model_config /path/to/Wan2.1-T2V-1.3B/config.json \
-  --vae_path /path/to/Wan2.1_VAE.pth \
   --prompt "A cat walks on the grass, realistic style, high quality" \
   --output_dir ./artifacts/upstream_compare
 ```
+
+If `--checkpoint_path`, `--wan_model_config`, or `--vae_path` are omitted, the validator downloads them automatically from Hugging Face:
+
+- `gdhe17/Self-Forcing` for `checkpoints/self_forcing_dmd.pt`
+- `Wan-AI/Wan2.1-T2V-1.3B` for `config.json`, `Wan2.1_VAE.pth`, and the upstream tokenizer/text-encoder weights used by the default `--text_encoder_source upstream` flow
 
 ## Tests
 
@@ -61,4 +64,3 @@ The heavier E2E coverage lives in the scripts themselves and expects:
 - the original `guandeh17/Self-Forcing` repo checked out locally
 - the upstream Self-Forcing checkpoint
 - the Wan base model assets
-

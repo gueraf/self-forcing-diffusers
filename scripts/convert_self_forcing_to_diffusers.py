@@ -23,6 +23,11 @@ from safetensors.torch import load_file, save_file
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from self_forcing_diffusers.hf_assets import (
+    DEFAULT_SELF_FORCING_CHECKPOINT_FILENAME,
+    DEFAULT_SELF_FORCING_REPO_ID,
+    resolve_self_forcing_checkpoint_path,
+)
 from self_forcing_diffusers.model_patches import apply_self_forcing_wan_model_patches
 
 
@@ -301,7 +306,9 @@ def convert_self_forcing_checkpoint(checkpoint_path, output_path, use_ema=True, 
 
 def main():
     parser = argparse.ArgumentParser(description="Convert a Self-Forcing Wan checkpoint to diffusers format")
-    parser.add_argument("--checkpoint_path", type=str, required=True)
+    parser.add_argument("--checkpoint_path", type=str, default=None)
+    parser.add_argument("--checkpoint_repo_id", type=str, default=DEFAULT_SELF_FORCING_REPO_ID)
+    parser.add_argument("--checkpoint_filename", type=str, default=DEFAULT_SELF_FORCING_CHECKPOINT_FILENAME)
     parser.add_argument("--output_path", type=str, default="self_forcing_diffusers")
     parser.add_argument("--no_ema", action="store_true")
     parser.add_argument("--device", type=str, default="cpu")
@@ -325,8 +332,14 @@ def main():
     parser.add_argument("--validation_vae_device", type=str, default=None)
     args = parser.parse_args()
 
+    checkpoint_path = resolve_self_forcing_checkpoint_path(
+        args.checkpoint_path,
+        repo_id=args.checkpoint_repo_id,
+        filename=args.checkpoint_filename,
+    )
+
     output_dir, validation_report_path = convert_self_forcing_checkpoint(
-        checkpoint_path=args.checkpoint_path,
+        checkpoint_path=checkpoint_path,
         output_path=args.output_path,
         use_ema=not args.no_ema,
         device=args.device,
