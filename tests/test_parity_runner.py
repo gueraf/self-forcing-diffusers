@@ -10,6 +10,8 @@ from self_forcing_diffusers.parity_runner import (
     ParityAssertionError,
     assert_conversion_report_exact,
     assert_validation_report_exact,
+    clean_export_duration_seconds,
+    clean_export_num_chunks_for_duration,
     create_artifact_bundle,
     upload_release_assets,
 )
@@ -66,6 +68,12 @@ class TestParityRunner(unittest.TestCase):
         summary = assert_validation_report_exact(report)
 
         self.assertEqual(summary["num_frames"], 9)
+
+    def test_clean_export_num_chunks_for_duration_rounds_up_to_cover_requested_runtime(self):
+        self.assertEqual(clean_export_num_chunks_for_duration(25.0, fps=16, frames_per_chunk=9), 45)
+
+    def test_clean_export_duration_seconds_matches_chunk_count(self):
+        self.assertEqual(clean_export_duration_seconds(num_chunks=45, fps=16, frames_per_chunk=9), 25.3125)
 
     def test_create_artifact_bundle_excludes_converted_weights_by_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -29,11 +29,13 @@ That command:
 
 - converts the original Self-Forcing checkpoint into diffusers format
 - validates exact parity against `guandeh17/Self-Forcing`
-- runs the public diffusers autoregressive export path and writes `clean_export.mp4`
+- runs the public diffusers autoregressive export path and writes a roughly `25s` `clean_export.mp4` by default
 - bundles the reports and videos
 - uploads the artifact bundle and manifest to the `parity-artifacts` GitHub release in `gueraf/self-forcing-diffusers`
 
 The remote artifact path uses GitHub release assets rather than Git LFS, so the bundle stays under the per-file release limit and does not consume LFS storage/bandwidth quota.
+
+You can override the long export length with either `--clean_export_duration_seconds` or `--clean_export_num_chunks`. The shorter exact upstream parity check still uses `--num_chunks`, which defaults to `3`.
 
 If `--upstream_repo_path` is omitted, the original repo is cloned or refreshed automatically under `~/.cache/self-forcing-diffusers/upstream-repos/Self-Forcing`.
 
@@ -52,10 +54,10 @@ Run autoregressive generation:
 uv run python scripts/autoregressive_video_generation.py \
   --model_id ./artifacts/self_forcing_diffusers \
   --prompt "A cat walks on the grass, realistic style, high quality" \
-  --num_chunks 2 \
-  --frames_per_chunk 9 \
   --output ./artifacts/autoregressive.mp4
 ```
+
+The standalone autoregressive script now defaults to `45` chunks at `16fps`, which is about `25.3s` of video with the default `9` frames per chunk.
 
 Validate directly against the original upstream repo:
 

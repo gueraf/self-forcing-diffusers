@@ -456,7 +456,7 @@ def main():
         "--negative_prompt",
         default="Bright tones, overexposed, static, blurred details, subtitles, worst quality, low quality",
     )
-    parser.add_argument("--num_chunks", type=int, default=27)
+    parser.add_argument("--num_chunks", type=int, default=45)
     parser.add_argument("--frames_per_chunk", type=int, default=9)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--width", type=int, default=832)

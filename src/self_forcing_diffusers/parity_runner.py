@@ -26,6 +26,7 @@ DEFAULT_UPSTREAM_REPO_REF = "main"
 DEFAULT_UPLOAD_REPO = "gueraf/self-forcing-diffusers"
 DEFAULT_UPLOAD_TAG = "parity-artifacts"
 DEFAULT_UPLOAD_ASSET_PREFIX = "sf-parity-latest"
+DEFAULT_CLEAN_EXPORT_DURATION_SECONDS = 25.0
 
 
 class ParityAssertionError(RuntimeError):
@@ -204,6 +205,29 @@ def _append_optional_path(command: list[str], flag: str, value: str | None):
         command.extend([flag, value])
 
 
+def clean_export_num_chunks_for_duration(duration_seconds: float, fps: int, frames_per_chunk: int) -> int:
+    if duration_seconds <= 0:
+        raise ValueError(f"`duration_seconds` must be positive, but received {duration_seconds}.")
+    if fps <= 0:
+        raise ValueError(f"`fps` must be positive, but received {fps}.")
+    if frames_per_chunk <= 0:
+        raise ValueError(f"`frames_per_chunk` must be positive, but received {frames_per_chunk}.")
+
+    required_frames = duration_seconds * fps
+    return max(1, math.ceil(required_frames / frames_per_chunk))
+
+
+def clean_export_duration_seconds(num_chunks: int, fps: int, frames_per_chunk: int) -> float:
+    if num_chunks <= 0:
+        raise ValueError(f"`num_chunks` must be positive, but received {num_chunks}.")
+    if fps <= 0:
+        raise ValueError(f"`fps` must be positive, but received {fps}.")
+    if frames_per_chunk <= 0:
+        raise ValueError(f"`frames_per_chunk` must be positive, but received {frames_per_chunk}.")
+
+    return (num_chunks * frames_per_chunk) / fps
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Run checkpoint conversion, upstream parity validation, clean export, and artifact upload in one command."
@@ -228,6 +252,8 @@ def build_parser():
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--width", type=int, default=832)
     parser.add_argument("--fps", type=int, default=16)
+    parser.add_argument("--clean_export_num_chunks", type=int, default=None)
+    parser.add_argument("--clean_export_duration_seconds", type=float, default=DEFAULT_CLEAN_EXPORT_DURATION_SECONDS)
     parser.add_argument("--upload", choices=("github-release", "none"), default="github-release")
     parser.add_argument("--upload_repo", type=str, default=DEFAULT_UPLOAD_REPO)
     parser.add_argument("--upload_release_tag", type=str, default=DEFAULT_UPLOAD_TAG)
@@ -254,6 +280,20 @@ def main():
     run_manifest_path = run_dir / "run_manifest.json"
     bundle_path = run_dir.parent / f"{args.upload_asset_prefix}.tar.gz"
     upload_manifest_path = run_dir.parent / f"{args.upload_asset_prefix}.manifest.json"
+    clean_export_num_chunks = (
+        args.clean_export_num_chunks
+        if args.clean_export_num_chunks is not None
+        else clean_export_num_chunks_for_duration(
+            duration_seconds=args.clean_export_duration_seconds,
+            fps=args.fps,
+            frames_per_chunk=args.frames_per_chunk,
+        )
+    )
+    clean_export_actual_duration_seconds = clean_export_duration_seconds(
+        num_chunks=clean_export_num_chunks,
+        fps=args.fps,
+        frames_per_chunk=args.frames_per_chunk,
+    )
 
     upstream_repo_dir, upstream_commit = resolve_upstream_repo(
         args.upstream_repo_path,
@@ -319,7 +359,7 @@ def main():
         "--negative_prompt",
         args.negative_prompt,
         "--num_chunks",
-        str(args.num_chunks),
+        str(clean_export_num_chunks),
         "--frames_per_chunk",
         str(args.frames_per_chunk),
         "--height",
@@ -357,6 +397,18 @@ def main():
             "url": args.upstream_repo_url,
             "ref": args.upstream_repo_ref,
             "commit": upstream_commit,
+        },
+        "validation": {
+            "num_chunks": args.num_chunks,
+            "frames_per_chunk": args.frames_per_chunk,
+            "fps": args.fps,
+        },
+        "clean_export": {
+            "num_chunks": clean_export_num_chunks,
+            "frames_per_chunk": args.frames_per_chunk,
+            "fps": args.fps,
+            "target_duration_seconds": args.clean_export_duration_seconds,
+            "actual_duration_seconds": clean_export_actual_duration_seconds,
         },
         "conversion_summary": conversion_summary,
         "validation_summary": validation_summary,

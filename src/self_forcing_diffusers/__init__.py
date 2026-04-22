@@ -18,17 +18,21 @@ from .model_patches import (
     assert_valid_self_forcing_transformer,
 )
 from .parity_runner import (
+    DEFAULT_CLEAN_EXPORT_DURATION_SECONDS,
     DEFAULT_UPLOAD_REPO,
     DEFAULT_UPLOAD_TAG,
     ParityAssertionError,
     assert_conversion_report_exact,
     assert_validation_report_exact,
+    clean_export_duration_seconds,
+    clean_export_num_chunks_for_duration,
     create_artifact_bundle,
     resolve_upstream_repo,
     upload_release_assets,
 )
 
 __all__ = [
+    "DEFAULT_CLEAN_EXPORT_DURATION_SECONDS",
     "DEFAULT_SELF_FORCING_CHECKPOINT_FILENAME",
     "DEFAULT_SELF_FORCING_REPO_ID",
     "DEFAULT_UPLOAD_REPO",
@@ -44,6 +48,8 @@ __all__ = [
     "assert_conversion_report_exact",
     "assert_valid_self_forcing_transformer",
     "assert_validation_report_exact",
+    "clean_export_duration_seconds",
+    "clean_export_num_chunks_for_duration",
     "create_artifact_bundle",
     "resolve_self_forcing_checkpoint_path",
     "resolve_upstream_repo",
