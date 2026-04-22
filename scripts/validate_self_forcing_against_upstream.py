@@ -56,6 +56,17 @@ def _manual_seed_all(seed):
         torch.cuda.manual_seed_all(seed)
 
 
+def _prompt_embeds_output_dtype(output_device):
+    output_device = _resolve_device(output_device)
+    return torch.float32 if output_device.type == "cpu" else torch.bfloat16
+
+
+def _prepare_prompt_embeds_for_output_device(prompt_embeds, output_device):
+    output_device = _resolve_device(output_device)
+    output_dtype = _prompt_embeds_output_dtype(output_device)
+    return prompt_embeds.to(device=output_device, dtype=output_dtype)
+
+
 def _build_sf_denoising_steps(device):
     sigmas = torch.linspace(1.0, 0.0, 1001, device=device, dtype=torch.float64)[:-1]
     sigmas = 5.0 * sigmas / (1.0 + 4.0 * sigmas)
@@ -213,7 +224,7 @@ class HFTextEncoder(torch.nn.Module):
             tensor[seq_len:] = 0.0
 
         return {
-            "prompt_embeds": context.to(device=self.output_device)
+            "prompt_embeds": _prepare_prompt_embeds_for_output_device(context, self.output_device)
         }
 
 
@@ -257,7 +268,7 @@ class UpstreamTextEncoder(torch.nn.Module):
             tensor[seq_len:] = 0.0
 
         return {
-            "prompt_embeds": context.to(device=self.output_device)
+            "prompt_embeds": _prepare_prompt_embeds_for_output_device(context, self.output_device)
         }
 
 
@@ -531,8 +542,9 @@ def main():
 
     upstream_modules = _load_upstream_modules(args.upstream_repo_path)
     if args.prompt_embeds_path is not None:
-        prompt_embeds = _load_prompt_embeds(args.prompt_embeds_path, key=args.prompt_embeds_key).to(
-            device=_resolve_device(args.device)
+        prompt_embeds = _prepare_prompt_embeds_for_output_device(
+            _load_prompt_embeds(args.prompt_embeds_path, key=args.prompt_embeds_key),
+            args.device,
         )
         conditional_dict = {"prompt_embeds": prompt_embeds}
     else:

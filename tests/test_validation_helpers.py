@@ -107,6 +107,10 @@ class TestValidateSelfForcingAgainstUpstreamHelpers(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing Self-Forcing cross-attention norms"):
             EXAMPLE_MODULE._assert_valid_self_forcing_transformer(transformer)
 
+    def test_prompt_embeds_output_dtype_matches_runtime_device(self):
+        self.assertEqual(MODULE._prompt_embeds_output_dtype("cpu"), torch.float32)
+        self.assertEqual(MODULE._prompt_embeds_output_dtype("cuda:0"), torch.bfloat16)
+
     def test_align_self_forcing_transformer_dtype_casts_fp32_runtime_modules(self):
         class DummyBlock(nn.Module):
             def __init__(self):

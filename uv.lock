@@ -297,7 +297,7 @@ nvtx = [
 [[package]]
 name = "diffusers"
 version = "0.38.0.dev0"
-source = { git = "https://github.com/gueraf/diffusers.git?branch=rolling-kv-cache-hook-12600#e9d4ce97b1fb0f6a052afd6dd573d5dd57e92c0f" }
+source = { git = "https://github.com/gueraf/diffusers.git?branch=main#a023675394b206df8346f95d7b71d868e171667b" }
 dependencies = [
     { name = "filelock" },
     { name = "httpx" },
@@ -1426,7 +1426,7 @@ dev = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.7.0" },
     { name = "av", specifier = "==13.1.0" },
-    { name = "diffusers", git = "https://github.com/gueraf/diffusers.git?branch=rolling-kv-cache-hook-12600" },
+    { name = "diffusers", git = "https://github.com/gueraf/diffusers.git?branch=main" },
     { name = "easydict", specifier = ">=1.13" },
     { name = "einops", specifier = ">=0.8.0" },
     { name = "ftfy", specifier = ">=6.3.0" },

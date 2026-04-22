@@ -28,13 +28,16 @@ dependencies = [
     "transformers>=4.52.0",
 ]
 
+[project.scripts]
+sf-e2e-parity = "self_forcing_diffusers.parity_runner:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
 ]
 
 [tool.uv.sources]
-diffusers = { git = "https://github.com/gueraf/diffusers.git", branch = "rolling-kv-cache-hook-12600" }
+diffusers = { git = "https://github.com/gueraf/diffusers.git", branch = "main" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
