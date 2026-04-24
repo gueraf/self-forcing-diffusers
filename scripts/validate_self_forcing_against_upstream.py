@@ -37,12 +37,13 @@ from self_forcing_diffusers.hf_assets import (
     resolve_wan_vae_path,
 )
 from self_forcing_diffusers.model_patches import apply_self_forcing_wan_model_patches
+from self_forcing_diffusers.rolling_kv import write_rolling_kv_cache
 
 
 apply_self_forcing_wan_model_patches()
 
 from diffusers import WanTransformer3DModel
-from diffusers.hooks import RollingKVCacheConfig, get_rolling_kv_cache_state, prefill_rolling_kv_cache
+from diffusers.hooks import RollingKVCacheConfig, get_rolling_kv_cache_state
 from diffusers.utils import export_to_video
 
 
@@ -475,7 +476,7 @@ def _generate_diffusers_latents(
                             scheduler_sigmas,
                         )
 
-            prefill_rolling_kv_cache(
+            write_rolling_kv_cache(
                 transformer,
                 x0_pred,
                 prompt_embeds,
@@ -663,7 +664,7 @@ def main():
     transformer.eval()
     _assert_valid_self_forcing_transformer(transformer)
     _align_self_forcing_transformer_dtype(transformer)
-    transformer.enable_cache(RollingKVCacheConfig(window_size=-1, cache_cross_attention=True))
+    transformer.enable_cache(RollingKVCacheConfig(window_size=-1))
 
     _manual_seed_all(renoise_seed)
     denoising_steps = _build_sf_denoising_steps(device=_resolve_device(args.device))

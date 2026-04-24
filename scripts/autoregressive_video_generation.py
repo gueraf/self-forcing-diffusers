@@ -30,12 +30,13 @@ from transformers import AutoTokenizer, UMT5EncoderModel
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from self_forcing_diffusers.model_patches import apply_self_forcing_wan_model_patches
+from self_forcing_diffusers.rolling_kv import write_rolling_kv_cache
 
 
 apply_self_forcing_wan_model_patches()
 
 from diffusers import AutoencoderKLWan, FlowMatchEulerDiscreteScheduler, WanPipeline, WanTransformer3DModel
-from diffusers.hooks import RollingKVCacheConfig, get_rolling_kv_cache_state, prefill_rolling_kv_cache
+from diffusers.hooks import RollingKVCacheConfig, get_rolling_kv_cache_state
 from diffusers.utils import export_to_video, load_video
 
 
@@ -297,9 +298,7 @@ def generate_autoregressive_video(
         text_encoder_device=text_encoder_device,
         vae_device=vae_device,
     )
-    pipe.transformer.enable_cache(
-        RollingKVCacheConfig(window_size=window_size, cache_cross_attention=True)
-    )
+    pipe.transformer.enable_cache(RollingKVCacheConfig(window_size=window_size))
 
     denoising_steps = _build_sf_denoising_steps(device=device)
     scheduler_timesteps, scheduler_sigmas = _build_sf_scheduler_tables(device=device)
@@ -360,7 +359,7 @@ def generate_autoregressive_video(
         if reference_chunks and chunk_idx == conditioning_start_chunk:
             conditioning_latents = [chunk_latents for chunk_latents, _, _ in reference_chunks]
             reference_frame_offset = chunk_idx * patch_frames_per_chunk
-            prefill_rolling_kv_cache(
+            write_rolling_kv_cache(
                 pipe.transformer,
                 conditioning_latents,
                 prompt_embeds,
@@ -369,7 +368,7 @@ def generate_autoregressive_video(
                 write_mode="overwrite",
             )
             if do_cfg:
-                prefill_rolling_kv_cache(
+                write_rolling_kv_cache(
                     pipe.transformer,
                     conditioning_latents,
                     negative_prompt_embeds,
@@ -423,7 +422,7 @@ def generate_autoregressive_video(
                         scheduler_sigmas,
                     )
 
-        prefill_rolling_kv_cache(
+        write_rolling_kv_cache(
             pipe.transformer,
             x0_pred,
             prompt_embeds,
@@ -432,7 +431,7 @@ def generate_autoregressive_video(
             write_mode="overwrite",
         )
         if do_cfg:
-            prefill_rolling_kv_cache(
+            write_rolling_kv_cache(
                 pipe.transformer,
                 x0_pred,
                 negative_prompt_embeds,
