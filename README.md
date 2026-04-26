@@ -31,7 +31,7 @@ That command:
 - validates exact parity against `guandeh17/Self-Forcing`
 - runs the public diffusers autoregressive export path and writes a roughly `25s` `clean_export.mp4` by default
 - bundles the reports and videos
-- uploads the artifact bundle and manifest to the `parity-artifacts` GitHub release in `gueraf/self-forcing-diffusers`
+- uploads the artifact bundle, manifest, and the three videos as standalone assets (`<prefix>.clean_export.mp4`, `<prefix>.validation_diffusers.mp4`, `<prefix>.validation_original.mp4`) to the `parity-artifacts` GitHub release in `gueraf/self-forcing-diffusers`
 
 The remote artifact path uses GitHub release assets rather than Git LFS, so the bundle stays under the per-file release limit and does not consume LFS storage/bandwidth quota.
 

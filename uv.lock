@@ -297,7 +297,7 @@ nvtx = [
 [[package]]
 name = "diffusers"
 version = "0.38.0.dev0"
-source = { git = "https://github.com/gueraf/diffusers.git?branch=sf-rolling-kv-minimal#d9d44aa7fe19f8c542377700433130afbc1d4dbb" }
+source = { git = "https://github.com/gueraf/diffusers.git?branch=sf-rolling-kv-minimal#648c4b0cd047a5aa2036958bcdbe7f44f81d46a5" }
 dependencies = [
     { name = "filelock" },
     { name = "httpx" },

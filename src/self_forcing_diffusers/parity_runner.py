@@ -280,6 +280,9 @@ def main():
     run_manifest_path = run_dir / "run_manifest.json"
     bundle_path = run_dir.parent / f"{args.upload_asset_prefix}.tar.gz"
     upload_manifest_path = run_dir.parent / f"{args.upload_asset_prefix}.manifest.json"
+    clean_export_asset_path = run_dir.parent / f"{args.upload_asset_prefix}.clean_export.mp4"
+    validation_diffusers_asset_path = run_dir.parent / f"{args.upload_asset_prefix}.validation_diffusers.mp4"
+    validation_original_asset_path = run_dir.parent / f"{args.upload_asset_prefix}.validation_original.mp4"
     clean_export_num_chunks = (
         args.clean_export_num_chunks
         if args.clean_export_num_chunks is not None
@@ -428,12 +431,29 @@ def main():
         bundle_path=bundle_path,
         include_converted_model=args.include_converted_model,
     )
+
+    standalone_video_pairs = [
+        (clean_export_path, clean_export_asset_path),
+        (validation_dir / "diffusers.mp4", validation_diffusers_asset_path),
+        (validation_dir / "original.mp4", validation_original_asset_path),
+    ]
+    for src, dst in standalone_video_pairs:
+        shutil.copy2(src, dst)
+
     upload_manifest = dict(run_manifest)
     upload_manifest["excluded_paths"] = excluded_paths
     upload_manifest["bundle"] = {
         "path": str(bundle_path),
         "size_bytes": bundle_path.stat().st_size,
         "sha256": sha256_file(bundle_path),
+    }
+    upload_manifest["standalone_videos"] = {
+        dst.name: {
+            "path": str(dst),
+            "size_bytes": dst.stat().st_size,
+            "sha256": sha256_file(dst),
+        }
+        for _, dst in standalone_video_pairs
     }
 
     with upload_manifest_path.open("w") as handle:
@@ -443,7 +463,7 @@ def main():
         upload_manifest["remote_storage"] = upload_release_assets(
             repo=args.upload_repo,
             tag=args.upload_release_tag,
-            assets=[bundle_path, upload_manifest_path],
+            assets=[bundle_path, upload_manifest_path, *(dst for _, dst in standalone_video_pairs)],
         )
         with upload_manifest_path.open("w") as handle:
             json.dump(upload_manifest, handle, indent=2)
