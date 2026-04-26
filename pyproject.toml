@@ -37,7 +37,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-diffusers = { git = "https://github.com/gueraf/diffusers.git", branch = "main" }
+diffusers = { git = "https://github.com/gueraf/diffusers.git", branch = "sf-rolling-kv-minimal" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
