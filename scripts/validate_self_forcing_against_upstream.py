@@ -481,7 +481,6 @@ def _generate_diffusers_latents(
                 x0_pred,
                 prompt_embeds,
                 frame_offset=frame_offset,
-                cache_context="cond",
                 write_mode="overwrite",
             )
             outputs.append(x0_pred.permute(0, 2, 1, 3, 4).contiguous())
