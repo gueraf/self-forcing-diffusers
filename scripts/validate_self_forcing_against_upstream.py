@@ -43,7 +43,7 @@ from self_forcing_diffusers.rolling_kv import write_rolling_kv_cache
 apply_self_forcing_wan_model_patches()
 
 from diffusers import WanTransformer3DModel
-from diffusers.hooks import RollingKVCacheConfig, get_rolling_kv_cache_state
+from diffusers.models.transformers.transformer_wan import WanRollingKVCache
 from diffusers.utils import export_to_video
 
 
@@ -421,71 +421,66 @@ def _generate_diffusers_latents(
     scheduler_sigmas,
     latent_frames_per_chunk,
 ):
+    cache = WanRollingKVCache(num_blocks=len(transformer.blocks), window_size=-1)
     outputs = []
-    with transformer.cache_context("cond"):
-        state = get_rolling_kv_cache_state(transformer)
-        if state is None:
-            raise ValueError("Rolling KV cache must be enabled before generation.")
-        for chunk_start in range(0, full_noise.shape[1], latent_frames_per_chunk):
-            frame_offset = chunk_start
-            noisy_input = full_noise[:, chunk_start : chunk_start + latent_frames_per_chunk].permute(0, 2, 1, 3, 4)
-            noisy_input = noisy_input.contiguous()
-            token_offset = _frame_to_token_offset(transformer, noisy_input, frame_offset)
 
-            with torch.no_grad():
-                for step_index, timestep in enumerate(denoising_steps):
-                    model_timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
-                    prev_should_update = state.should_update_cache
-                    prev_write_mode = state.write_mode
-                    prev_absolute_token_offset = state.absolute_token_offset
-                    try:
-                        state.should_update_cache = True
-                        state.configure_cache_write(write_mode="overwrite", absolute_token_offset=token_offset)
-                        velocity = transformer(
-                            hidden_states=noisy_input,
-                            timestep=model_timestep,
-                            encoder_hidden_states=prompt_embeds,
-                            frame_offset=frame_offset,
-                            return_dict=False,
-                        )[0]
-                    finally:
-                        state.should_update_cache = prev_should_update
-                        state.configure_cache_write(
-                            write_mode=prev_write_mode,
-                            absolute_token_offset=prev_absolute_token_offset,
-                        )
+    for chunk_start in range(0, full_noise.shape[1], latent_frames_per_chunk):
+        frame_offset = chunk_start
+        noisy_input = full_noise[:, chunk_start : chunk_start + latent_frames_per_chunk].permute(0, 2, 1, 3, 4)
+        noisy_input = noisy_input.contiguous()
+        token_offset = _frame_to_token_offset(transformer, noisy_input, frame_offset)
 
-                    x0_pred = _convert_sf_flow_to_x0(
-                        velocity,
-                        noisy_input,
-                        model_timestep,
+        with torch.no_grad():
+            for step_index, timestep in enumerate(denoising_steps):
+                model_timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
+                prev_write_mode = cache.write_mode
+                prev_absolute_token_offset = cache.absolute_token_offset
+                try:
+                    cache.configure_write(write_mode="overwrite", absolute_token_offset=token_offset)
+                    velocity = transformer(
+                        hidden_states=noisy_input,
+                        timestep=model_timestep,
+                        encoder_hidden_states=prompt_embeds,
+                        frame_offset=frame_offset,
+                        return_dict=False,
+                        attention_kwargs={"rolling_kv_cache": cache},
+                    )[0]
+                finally:
+                    cache.write_mode = prev_write_mode
+                    cache.absolute_token_offset = prev_absolute_token_offset
+
+                x0_pred = _convert_sf_flow_to_x0(
+                    velocity,
+                    noisy_input,
+                    model_timestep,
+                    scheduler_timesteps,
+                    scheduler_sigmas,
+                )
+
+                if step_index < len(denoising_steps) - 1:
+                    next_timestep = denoising_steps[step_index + 1].expand(
+                        noisy_input.shape[0], noisy_input.shape[2]
+                    )
+                    eps = _sample_self_forcing_renoise(x0_pred)
+                    noisy_input = _add_sf_noise(
+                        x0_pred,
+                        eps,
+                        next_timestep,
                         scheduler_timesteps,
                         scheduler_sigmas,
                     )
 
-                    if step_index < len(denoising_steps) - 1:
-                        next_timestep = denoising_steps[step_index + 1].expand(
-                            noisy_input.shape[0], noisy_input.shape[2]
-                        )
-                        eps = _sample_self_forcing_renoise(x0_pred)
-                        noisy_input = _add_sf_noise(
-                            x0_pred,
-                            eps,
-                            next_timestep,
-                            scheduler_timesteps,
-                            scheduler_sigmas,
-                        )
+        write_rolling_kv_cache(
+            transformer,
+            x0_pred,
+            prompt_embeds,
+            cache,
+            frame_offset=frame_offset,
+            write_mode="overwrite",
+        )
+        outputs.append(x0_pred.permute(0, 2, 1, 3, 4).contiguous())
 
-            write_rolling_kv_cache(
-                transformer,
-                x0_pred,
-                prompt_embeds,
-                frame_offset=frame_offset,
-                write_mode="overwrite",
-            )
-            outputs.append(x0_pred.permute(0, 2, 1, 3, 4).contiguous())
-
-    transformer._reset_stateful_cache()
+    cache.reset()
     return torch.cat(outputs, dim=1)
 
 
@@ -663,7 +658,6 @@ def main():
     transformer.eval()
     _assert_valid_self_forcing_transformer(transformer)
     _align_self_forcing_transformer_dtype(transformer)
-    transformer.enable_cache(RollingKVCacheConfig(window_size=-1))
 
     _manual_seed_all(renoise_seed)
     denoising_steps = _build_sf_denoising_steps(device=_resolve_device(args.device))

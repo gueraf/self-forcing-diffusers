@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
-
 import torch
-
-from diffusers.hooks import get_rolling_kv_cache_state
 
 
 def _chunk_sequence(chunks: torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...]) -> list[torch.Tensor]:
@@ -61,42 +57,40 @@ def write_rolling_kv_cache(
     transformer: torch.nn.Module,
     latents: torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...],
     encoder_hidden_states: torch.Tensor,
+    rolling_kv_cache,
     *,
     frame_offset: int | list[int] | tuple[int, ...] = 0,
-    cache_context: str | None = None,
     write_mode: str = "overwrite",
 ) -> None:
     chunks = _chunk_sequence(latents)
     frame_offsets = _normalize_frame_offsets(transformer, chunks, frame_offset)
-    context_manager = transformer.cache_context(cache_context) if cache_context is not None else nullcontext()
 
-    with context_manager:
-        cache_state = get_rolling_kv_cache_state(transformer)
-        if cache_state is None:
-            raise ValueError("Rolling KV cache must be enabled before writing clean cache states.")
+    prev_should_update = rolling_kv_cache.should_update
+    prev_write_mode = rolling_kv_cache.write_mode
+    prev_absolute_token_offset = rolling_kv_cache.absolute_token_offset
 
-        prev_should_update = cache_state.should_update_cache
-        prev_write_mode = cache_state.write_mode
-        prev_absolute_token_offset = cache_state.absolute_token_offset
+    try:
+        for chunk, chunk_frame_offset in zip(chunks, frame_offsets):
+            token_offset = _frame_to_token_offset(transformer, chunk, chunk_frame_offset)
+            patch_frames = chunk.shape[2] // transformer.config.patch_size[0]
+            timestep = torch.zeros((chunk.shape[0], patch_frames), device=chunk.device, dtype=torch.long)
 
-        try:
-            for chunk, chunk_frame_offset in zip(chunks, frame_offsets):
-                token_offset = _frame_to_token_offset(transformer, chunk, chunk_frame_offset)
-                patch_frames = chunk.shape[2] // transformer.config.patch_size[0]
-                timestep = torch.zeros((chunk.shape[0], patch_frames), device=chunk.device, dtype=torch.long)
+            rolling_kv_cache.should_update = True
+            if write_mode == "overwrite":
+                rolling_kv_cache.configure_write(write_mode="overwrite", absolute_token_offset=token_offset)
+            else:
+                rolling_kv_cache.write_mode = write_mode
+                rolling_kv_cache.absolute_token_offset = None
 
-                cache_state.should_update_cache = True
-                cache_state.configure_cache_write(write_mode=write_mode, absolute_token_offset=token_offset)
-                transformer(
-                    hidden_states=chunk,
-                    timestep=timestep,
-                    encoder_hidden_states=encoder_hidden_states,
-                    frame_offset=chunk_frame_offset,
-                    return_dict=False,
-                )
-        finally:
-            cache_state.should_update_cache = prev_should_update
-            cache_state.configure_cache_write(
-                write_mode=prev_write_mode,
-                absolute_token_offset=prev_absolute_token_offset,
+            transformer(
+                hidden_states=chunk,
+                timestep=timestep,
+                encoder_hidden_states=encoder_hidden_states,
+                frame_offset=chunk_frame_offset,
+                return_dict=False,
+                attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
             )
+    finally:
+        rolling_kv_cache.should_update = prev_should_update
+        rolling_kv_cache.write_mode = prev_write_mode
+        rolling_kv_cache.absolute_token_offset = prev_absolute_token_offset

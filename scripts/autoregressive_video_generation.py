@@ -36,7 +36,7 @@ from self_forcing_diffusers.rolling_kv import write_rolling_kv_cache
 apply_self_forcing_wan_model_patches()
 
 from diffusers import AutoencoderKLWan, FlowMatchEulerDiscreteScheduler, WanPipeline, WanTransformer3DModel
-from diffusers.hooks import RollingKVCacheConfig, get_rolling_kv_cache_state
+from diffusers.models.transformers.transformer_wan import WanRollingKVCache
 from diffusers.utils import export_to_video, load_video
 
 
@@ -223,6 +223,8 @@ def _generate_chunk_velocity(
     negative_prompt_embeds,
     guidance_scale,
     frame_offset,
+    cond_cache,
+    uncond_cache,
 ):
     if timestep.ndim == 0:
         timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
@@ -231,35 +233,29 @@ def _generate_chunk_velocity(
 
     token_offset = _frame_to_token_offset(pipe.transformer, noisy_input, frame_offset)
 
-    def run_with_overwrite(cache_context, encoder_hidden_states):
-        with pipe.transformer.cache_context(cache_context):
-            cache_state = get_rolling_kv_cache_state(pipe.transformer)
-            prev_should_update = cache_state.should_update_cache
-            prev_write_mode = cache_state.write_mode
-            prev_absolute_token_offset = cache_state.absolute_token_offset
-            try:
-                cache_state.should_update_cache = True
-                cache_state.configure_cache_write(write_mode="overwrite", absolute_token_offset=token_offset)
-                return pipe.transformer(
-                    noisy_input,
-                    timestep=timestep,
-                    encoder_hidden_states=encoder_hidden_states,
-                    frame_offset=frame_offset,
-                    return_dict=False,
-                )[0]
-            finally:
-                cache_state.should_update_cache = prev_should_update
-                cache_state.configure_cache_write(
-                    write_mode=prev_write_mode,
-                    absolute_token_offset=prev_absolute_token_offset,
-                )
+    def run_with_overwrite(rolling_kv_cache, encoder_hidden_states):
+        prev_write_mode = rolling_kv_cache.write_mode
+        prev_absolute_token_offset = rolling_kv_cache.absolute_token_offset
+        try:
+            rolling_kv_cache.configure_write(write_mode="overwrite", absolute_token_offset=token_offset)
+            return pipe.transformer(
+                noisy_input,
+                timestep=timestep,
+                encoder_hidden_states=encoder_hidden_states,
+                frame_offset=frame_offset,
+                return_dict=False,
+                attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
+            )[0]
+        finally:
+            rolling_kv_cache.write_mode = prev_write_mode
+            rolling_kv_cache.absolute_token_offset = prev_absolute_token_offset
 
     if guidance_scale > 1.0:
-        velocity_cond = run_with_overwrite("cond", prompt_embeds)
-        velocity_uncond = run_with_overwrite("uncond", negative_prompt_embeds)
+        velocity_cond = run_with_overwrite(cond_cache, prompt_embeds)
+        velocity_uncond = run_with_overwrite(uncond_cache, negative_prompt_embeds)
         return velocity_uncond + guidance_scale * (velocity_cond - velocity_uncond)
 
-    return run_with_overwrite("cond", prompt_embeds)
+    return run_with_overwrite(cond_cache, prompt_embeds)
 
 
 def _sample_self_forcing_renoise(latents, *, generator=None):
@@ -298,7 +294,6 @@ def generate_autoregressive_video(
         text_encoder_device=text_encoder_device,
         vae_device=vae_device,
     )
-    pipe.transformer.enable_cache(RollingKVCacheConfig(window_size=window_size))
 
     denoising_steps = _build_sf_denoising_steps(device=device)
     scheduler_timesteps, scheduler_sigmas = _build_sf_scheduler_tables(device=device)
@@ -321,6 +316,10 @@ def generate_autoregressive_video(
         pipe.text_encoder.to("cpu")
         if str(device).startswith("cuda"):
             torch.cuda.empty_cache()
+
+    num_blocks = len(pipe.transformer.blocks)
+    cond_cache = WanRollingKVCache(num_blocks=num_blocks, window_size=window_size)
+    uncond_cache = WanRollingKVCache(num_blocks=num_blocks, window_size=window_size) if do_cfg else None
 
     p_t, _, _ = pipe.transformer.config.patch_size
     latent_h = height // pipe.vae_scale_factor_spatial
@@ -363,8 +362,8 @@ def generate_autoregressive_video(
                 pipe.transformer,
                 conditioning_latents,
                 prompt_embeds,
+                cond_cache,
                 frame_offset=reference_frame_offset,
-                cache_context="cond",
                 write_mode="overwrite",
             )
             if do_cfg:
@@ -372,8 +371,8 @@ def generate_autoregressive_video(
                     pipe.transformer,
                     conditioning_latents,
                     negative_prompt_embeds,
+                    uncond_cache,
                     frame_offset=reference_frame_offset,
-                    cache_context="uncond",
                     write_mode="overwrite",
                 )
 
@@ -402,6 +401,8 @@ def generate_autoregressive_video(
                     negative_prompt_embeds=negative_prompt_embeds,
                     guidance_scale=guidance_scale,
                     frame_offset=frame_offset,
+                    cond_cache=cond_cache,
+                    uncond_cache=uncond_cache,
                 )
                 x0_pred = _convert_sf_flow_to_x0(
                     velocity,
@@ -426,8 +427,8 @@ def generate_autoregressive_video(
             pipe.transformer,
             x0_pred,
             prompt_embeds,
+            cond_cache,
             frame_offset=frame_offset,
-            cache_context="cond",
             write_mode="overwrite",
         )
         if do_cfg:
@@ -435,8 +436,8 @@ def generate_autoregressive_video(
                 pipe.transformer,
                 x0_pred,
                 negative_prompt_embeds,
+                uncond_cache,
                 frame_offset=frame_offset,
-                cache_context="uncond",
                 write_mode="overwrite",
             )
 
@@ -444,7 +445,10 @@ def generate_autoregressive_video(
         print(f"Generated chunk {chunk_idx + 1}/{num_chunks} ({len(all_frames)} frames total)")
         chunk_idx += 1
 
-    pipe.transformer._reset_stateful_cache()
+    cond_cache.reset()
+    if uncond_cache is not None:
+        uncond_cache.reset()
+
     return all_frames
 
 
