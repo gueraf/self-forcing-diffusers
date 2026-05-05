@@ -126,13 +126,6 @@ def _compute_framewise_psnr(reference_frames, candidate_frames):
     return psnrs
 
 
-def _frame_to_token_offset(transformer, latents, frame_offset):
-    _, _, _, height, width = latents.shape
-    _, p_h, p_w = transformer.config.patch_size
-    patches_per_frame = (height // p_h) * (width // p_w)
-    return frame_offset * patches_per_frame
-
-
 def _video_tensor_to_pil(video):
     frames = []
     for frame in video[0]:
@@ -428,15 +421,13 @@ def _generate_diffusers_latents(
         frame_offset = chunk_start
         noisy_input = full_noise[:, chunk_start : chunk_start + latent_frames_per_chunk].permute(0, 2, 1, 3, 4)
         noisy_input = noisy_input.contiguous()
-        token_offset = _frame_to_token_offset(transformer, noisy_input, frame_offset)
 
         with torch.no_grad():
             for step_index, timestep in enumerate(denoising_steps):
                 model_timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
                 prev_write_mode = cache.write_mode
-                prev_absolute_token_offset = cache.absolute_token_offset
                 try:
-                    cache.configure_write(write_mode="overwrite", absolute_token_offset=token_offset)
+                    cache.configure_write(write_mode="append" if step_index == 0 else "overwrite_end")
                     velocity = transformer(
                         hidden_states=noisy_input,
                         timestep=model_timestep,
@@ -447,7 +438,6 @@ def _generate_diffusers_latents(
                     )[0]
                 finally:
                     cache.write_mode = prev_write_mode
-                    cache.absolute_token_offset = prev_absolute_token_offset
 
                 x0_pred = _convert_sf_flow_to_x0(
                     velocity,
@@ -476,7 +466,7 @@ def _generate_diffusers_latents(
             prompt_embeds,
             cache,
             frame_offset=frame_offset,
-            write_mode="overwrite",
+            write_mode="overwrite_end",
         )
         outputs.append(x0_pred.permute(0, 2, 1, 3, 4).contiguous())
 

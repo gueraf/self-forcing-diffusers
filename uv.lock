@@ -297,7 +297,7 @@ nvtx = [
 [[package]]
 name = "diffusers"
 version = "0.38.0.dev0"
-source = { git = "https://github.com/gueraf/diffusers.git?branch=sf-rolling-kv-minimal#648c4b0cd047a5aa2036958bcdbe7f44f81d46a5" }
+source = { git = "https://github.com/gueraf/diffusers.git?branch=wan-rolling-kv-cache#8a82df9fdc5b761294420f084b2ed52496bd06ec" }
 dependencies = [
     { name = "filelock" },
     { name = "httpx" },
@@ -1426,7 +1426,7 @@ dev = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.7.0" },
     { name = "av", specifier = "==13.1.0" },
-    { name = "diffusers", git = "https://github.com/gueraf/diffusers.git?branch=sf-rolling-kv-minimal" },
+    { name = "diffusers", git = "https://github.com/gueraf/diffusers.git?branch=wan-rolling-kv-cache" },
     { name = "easydict", specifier = ">=1.13" },
     { name = "einops", specifier = ">=0.8.0" },
     { name = "ftfy", specifier = ">=6.3.0" },

@@ -117,13 +117,6 @@ def _compute_psnr(reference_frames, candidate_frames):
     return 20.0 * np.log10(255.0) - 10.0 * np.log10(mse)
 
 
-def _frame_to_token_offset(transformer, latents, frame_offset):
-    _, _, _, height, width = latents.shape
-    _, p_h, p_w = transformer.config.patch_size
-    patches_per_frame = (height // p_h) * (width // p_w)
-    return frame_offset * patches_per_frame
-
-
 def _assert_valid_self_forcing_transformer(transformer):
     has_cross_attn_norm = bool(getattr(transformer.config, "cross_attn_norm", False))
     has_norm_module = transformer.blocks and not isinstance(transformer.blocks[0].norm2, torch.nn.Identity)
@@ -225,19 +218,17 @@ def _generate_chunk_velocity(
     frame_offset,
     cond_cache,
     uncond_cache,
+    write_mode,
 ):
     if timestep.ndim == 0:
         timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
     elif timestep.ndim == 1:
         timestep = timestep.unsqueeze(1).expand(noisy_input.shape[0], noisy_input.shape[2])
 
-    token_offset = _frame_to_token_offset(pipe.transformer, noisy_input, frame_offset)
-
-    def run_with_overwrite(rolling_kv_cache, encoder_hidden_states):
+    def run(rolling_kv_cache, encoder_hidden_states):
         prev_write_mode = rolling_kv_cache.write_mode
-        prev_absolute_token_offset = rolling_kv_cache.absolute_token_offset
         try:
-            rolling_kv_cache.configure_write(write_mode="overwrite", absolute_token_offset=token_offset)
+            rolling_kv_cache.configure_write(write_mode=write_mode)
             return pipe.transformer(
                 noisy_input,
                 timestep=timestep,
@@ -248,14 +239,13 @@ def _generate_chunk_velocity(
             )[0]
         finally:
             rolling_kv_cache.write_mode = prev_write_mode
-            rolling_kv_cache.absolute_token_offset = prev_absolute_token_offset
 
     if guidance_scale > 1.0:
-        velocity_cond = run_with_overwrite(cond_cache, prompt_embeds)
-        velocity_uncond = run_with_overwrite(uncond_cache, negative_prompt_embeds)
+        velocity_cond = run(cond_cache, prompt_embeds)
+        velocity_uncond = run(uncond_cache, negative_prompt_embeds)
         return velocity_uncond + guidance_scale * (velocity_cond - velocity_uncond)
 
-    return run_with_overwrite(cond_cache, prompt_embeds)
+    return run(cond_cache, prompt_embeds)
 
 
 def _sample_self_forcing_renoise(latents, *, generator=None):
@@ -364,7 +354,7 @@ def generate_autoregressive_video(
                 prompt_embeds,
                 cond_cache,
                 frame_offset=reference_frame_offset,
-                write_mode="overwrite",
+                write_mode="append",
             )
             if do_cfg:
                 write_rolling_kv_cache(
@@ -373,7 +363,7 @@ def generate_autoregressive_video(
                     negative_prompt_embeds,
                     uncond_cache,
                     frame_offset=reference_frame_offset,
-                    write_mode="overwrite",
+                    write_mode="append",
                 )
 
             for _, decoded_frames, chunk_psnr in reference_chunks:
@@ -403,6 +393,7 @@ def generate_autoregressive_video(
                     frame_offset=frame_offset,
                     cond_cache=cond_cache,
                     uncond_cache=uncond_cache,
+                    write_mode="append" if step_idx == 0 else "overwrite_end",
                 )
                 x0_pred = _convert_sf_flow_to_x0(
                     velocity,
@@ -429,7 +420,7 @@ def generate_autoregressive_video(
             prompt_embeds,
             cond_cache,
             frame_offset=frame_offset,
-            write_mode="overwrite",
+            write_mode="overwrite_end",
         )
         if do_cfg:
             write_rolling_kv_cache(
@@ -438,7 +429,7 @@ def generate_autoregressive_video(
                 negative_prompt_embeds,
                 uncond_cache,
                 frame_offset=frame_offset,
-                write_mode="overwrite",
+                write_mode="overwrite_end",
             )
 
         all_frames.extend(_decode_latent_chunk(pipe, x0_pred, latents_mean, latents_std))

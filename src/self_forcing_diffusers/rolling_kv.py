@@ -42,16 +42,6 @@ def _normalize_frame_offsets(
     return list(frame_offset)
 
 
-def _frame_to_token_offset(transformer: torch.nn.Module, latents: torch.Tensor, frame_offset: int) -> int:
-    if frame_offset < 0:
-        raise ValueError("`frame_offset` must be >= 0.")
-
-    _, _, _, height, width = latents.shape
-    _, p_h, p_w = transformer.config.patch_size
-    patches_per_frame = (height // p_h) * (width // p_w)
-    return frame_offset * patches_per_frame
-
-
 @torch.no_grad()
 def write_rolling_kv_cache(
     transformer: torch.nn.Module,
@@ -60,27 +50,26 @@ def write_rolling_kv_cache(
     rolling_kv_cache,
     *,
     frame_offset: int | list[int] | tuple[int, ...] = 0,
-    write_mode: str = "overwrite",
+    write_mode: str = "append",
 ) -> None:
+    """Write one or more chunks into the rolling KV cache.
+
+    The first chunk uses ``write_mode``; subsequent chunks always append (they sit at the
+    new cache end after the first write).
+    """
     chunks = _chunk_sequence(latents)
     frame_offsets = _normalize_frame_offsets(transformer, chunks, frame_offset)
 
     prev_should_update = rolling_kv_cache.should_update
     prev_write_mode = rolling_kv_cache.write_mode
-    prev_absolute_token_offset = rolling_kv_cache.absolute_token_offset
 
     try:
-        for chunk, chunk_frame_offset in zip(chunks, frame_offsets):
-            token_offset = _frame_to_token_offset(transformer, chunk, chunk_frame_offset)
+        for i, (chunk, chunk_frame_offset) in enumerate(zip(chunks, frame_offsets)):
             patch_frames = chunk.shape[2] // transformer.config.patch_size[0]
             timestep = torch.zeros((chunk.shape[0], patch_frames), device=chunk.device, dtype=torch.long)
 
             rolling_kv_cache.should_update = True
-            if write_mode == "overwrite":
-                rolling_kv_cache.configure_write(write_mode="overwrite", absolute_token_offset=token_offset)
-            else:
-                rolling_kv_cache.write_mode = write_mode
-                rolling_kv_cache.absolute_token_offset = None
+            rolling_kv_cache.configure_write(write_mode=write_mode if i == 0 else "append")
 
             transformer(
                 hidden_states=chunk,
@@ -93,4 +82,3 @@ def write_rolling_kv_cache(
     finally:
         rolling_kv_cache.should_update = prev_should_update
         rolling_kv_cache.write_mode = prev_write_mode
-        rolling_kv_cache.absolute_token_offset = prev_absolute_token_offset
