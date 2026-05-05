@@ -34,7 +34,7 @@ def main():
     parser.add_argument("--frames_per_chunk", type=int, default=9)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--width", type=int, default=832)
-    parser.add_argument("--window_size", type=int, default=8000)
+    parser.add_argument("--window_size", type=int, default=-1)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--text_encoder_device", default=None)
     parser.add_argument("--vae_device", default=None)

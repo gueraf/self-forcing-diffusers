@@ -277,7 +277,7 @@ def generate_autoregressive_video(
     height=480,
     width=832,
     guidance_scale=1.0,
-    window_size=8000,
+    window_size=-1,
     model_id="gueraf/Self-Forcing-diffusers",
     wan_base_model_id="Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
     conditioning_video=None,
@@ -464,7 +464,7 @@ def main():
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--width", type=int, default=832)
     parser.add_argument("--guidance_scale", type=float, default=1.0)
-    parser.add_argument("--window_size", type=int, default=8000)
+    parser.add_argument("--window_size", type=int, default=-1)
     parser.add_argument("--model_id", default="gueraf/Self-Forcing-diffusers")
     parser.add_argument("--wan_base_model_id", default="Wan-AI/Wan2.1-T2V-1.3B-Diffusers")
     parser.add_argument("--conditioning_video", type=str, default=None)
