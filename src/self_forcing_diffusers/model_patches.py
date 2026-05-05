@@ -52,6 +52,8 @@ def apply_self_forcing_wan_model_patches():
         encoder_hidden_states: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
+        rolling_kv_cache: "wan_mod.WanRollingKVCache | None" = None,
+        block_idx: int | None = None,
     ) -> torch.Tensor:
         encoder_hidden_states_img = None
         if attn.add_k_proj is not None:
@@ -87,6 +89,28 @@ def apply_self_forcing_wan_model_patches():
 
             query = apply_rotary_emb(query, *rotary_emb)
             key = apply_rotary_emb(key, *rotary_emb)
+
+            if rolling_kv_cache is not None and block_idx is not None:
+                block_cache = rolling_kv_cache.block_caches[block_idx]
+                if rolling_kv_cache.write_mode == "overwrite":
+                    cached_key, cached_value, prefix_start = wan_mod._wan_rolling_kv_slice_for_overwrite(
+                        block_cache, rolling_kv_cache.absolute_token_offset
+                    )
+                else:
+                    cached_key = block_cache.cached_key
+                    cached_value = block_cache.cached_value
+                    prefix_start = block_cache.cache_start_token_offset
+
+                if cached_key is not None:
+                    key = torch.cat([cached_key, key], dim=1)
+                    value = torch.cat([cached_value, value], dim=1)
+
+                if rolling_kv_cache.should_update:
+                    (
+                        block_cache.cached_key,
+                        block_cache.cached_value,
+                        block_cache.cache_start_token_offset,
+                    ) = wan_mod._wan_rolling_kv_trim_to_window(key, value, prefix_start, rolling_kv_cache.window_size)
 
         hidden_states_img = None
         if encoder_hidden_states_img is not None:
@@ -296,6 +320,8 @@ def apply_self_forcing_wan_model_patches():
         encoder_hidden_states: torch.Tensor,
         temb: torch.Tensor,
         rotary_emb: torch.Tensor,
+        rolling_kv_cache: "wan_mod.WanRollingKVCache | None" = None,
+        block_idx: int | None = None,
     ) -> torch.Tensor:
         per_frame_modulation = temb.ndim == 4 and temb.shape[1] != hidden_states.shape[1]
         temb = temb.to(hidden_states.dtype)
@@ -323,7 +349,7 @@ def apply_self_forcing_wan_model_patches():
             norm_hidden_states = (norm_hidden_states * (1 + scale_msa.unsqueeze(2)) + shift_msa.unsqueeze(2)).flatten(
                 1, 2
             )
-            attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb)
+            attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb, rolling_kv_cache=rolling_kv_cache, block_idx=block_idx)
 
             hidden_states = hidden_states + (
                 attn_output.unflatten(1, (num_frames, frame_seq_len)) * gate_msa.unsqueeze(2)
@@ -345,7 +371,7 @@ def apply_self_forcing_wan_model_patches():
             return hidden_states
 
         norm_hidden_states = self.norm1(hidden_states) * (1 + scale_msa) + shift_msa
-        attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb)
+        attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb, rolling_kv_cache=rolling_kv_cache, block_idx=block_idx)
         hidden_states = hidden_states + attn_output * gate_msa
 
         norm_hidden_states = self.norm2(hidden_states)
@@ -399,8 +425,10 @@ def apply_self_forcing_wan_model_patches():
         if encoder_hidden_states_image is not None:
             encoder_hidden_states = torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)
 
+        rolling_kv_cache = (attention_kwargs or {}).pop("rolling_kv_cache", None)
+
         if torch.is_grad_enabled() and self.gradient_checkpointing:
-            for block in self.blocks:
+            for block_idx, block in enumerate(self.blocks):
                 hidden_states = self._gradient_checkpointing_func(
                     block,
                     hidden_states,
@@ -409,8 +437,11 @@ def apply_self_forcing_wan_model_patches():
                     rotary_emb,
                 )
         else:
-            for block in self.blocks:
-                hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
+            for block_idx, block in enumerate(self.blocks):
+                hidden_states = block(
+                    hidden_states, encoder_hidden_states, timestep_proj, rotary_emb,
+                    rolling_kv_cache=rolling_kv_cache, block_idx=block_idx,
+                )
 
         if temb.ndim == 3:
             if temb.shape[1] == hidden_states.shape[1]:
