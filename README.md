@@ -1,10 +1,10 @@
 # self-forcing-diffusers
 
-Self-Forcing conversion, validation, and E2E generation utilities on top of a clean `diffusers` hook branch.
+Self-Forcing conversion, validation, and E2E generation utilities using `WanRollingKVCache` from diffusers.
 
-This repo keeps the Self-Forcing-specific Wan patches, checkpoint conversion logic, and upstream parity validation outside `gueraf/diffusers`. The only required `diffusers` fork dependency is the minimal rolling KV cache branch, which is synced to current `huggingface/diffusers` plus the small self-attention cache hook needed by this project:
+This repo keeps the Self-Forcing-specific Wan patches, checkpoint conversion logic, and upstream parity validation outside `gueraf/diffusers`. The only required `diffusers` fork dependency is the rolling KV cache branch, which is synced to current `huggingface/diffusers` plus `WanRollingKVCache` for autoregressive inference:
 
-- `https://github.com/gueraf/diffusers/tree/sf-rolling-kv-minimal`
+- `https://github.com/gueraf/diffusers/tree/wan-rolling-kv-cache`
 
 ## Setup
 
@@ -12,7 +12,7 @@ This repo keeps the Self-Forcing-specific Wan patches, checkpoint conversion log
 uv sync
 ```
 
-The `pyproject.toml` pins `diffusers` to `gueraf/diffusers@sf-rolling-kv-minimal` via `tool.uv.sources`.
+The `pyproject.toml` pins `diffusers` to `gueraf/diffusers@wan-rolling-kv-cache` via `tool.uv.sources`.
 
 ## Main Commands
 
