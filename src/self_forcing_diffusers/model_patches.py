@@ -338,11 +338,24 @@ def apply_self_forcing_wan_model_patches():
 
         return wan_mod.Transformer2DModelOutput(sample=output)
 
+    # Match upstream WanRMSNorm semantics for Q/K norms: compute the RMS in float32,
+    # cast the normalized result back, then apply the affine weight in the input's dtype.
+    # diffusers' attn1.norm_q/norm_k use torch.nn.RMSNorm which computes the entire RMS
+    # in the input dtype (bfloat16). Tiny per-step rounding accumulates across denoising
+    # steps and chunks into latent diffs of ~3.9 against upstream — restoring float32 RMS
+    # gives bit-exact parity.
+    def _wan_rms_norm_forward(self, inputs):
+        normed = inputs.float() * torch.rsqrt(
+            inputs.float().pow(2).mean(dim=-1, keepdim=True) + self.eps
+        )
+        return normed.type_as(inputs) * self.weight
+
     wan_mod.WanTimeTextImageEmbedding.__init__ = _wan_time_text_image_embedding_init
     wan_mod.WanTimeTextImageEmbedding.forward = _wan_time_text_image_embedding_forward
     wan_mod.WanRotaryPosEmbed.__init__ = _wan_rotary_pos_embed_init
     wan_mod.WanRotaryPosEmbed.forward = _wan_rotary_pos_embed_forward
     wan_mod.WanTransformerBlock.forward = _wan_transformer_block_forward
     wan_mod.WanTransformer3DModel.forward = wan_mod.apply_lora_scale("attention_kwargs")(_wan_transformer_forward)
+    torch.nn.RMSNorm.forward = _wan_rms_norm_forward
 
     _PATCHES_APPLIED = True
