@@ -36,7 +36,7 @@ from self_forcing_diffusers.rolling_kv import write_kv_cache
 apply_self_forcing_wan_model_patches()
 
 from diffusers import AutoencoderKLWan, FlowMatchEulerDiscreteScheduler, WanPipeline, WanTransformer3DModel
-from diffusers.models.transformers.transformer_wan import WanRollingKVCache
+from diffusers.models.transformers.transformer_wan import WanKVCache
 from diffusers.utils import export_to_video, load_video
 
 
@@ -311,8 +311,8 @@ def generate_autoregressive_video(
             torch.cuda.empty_cache()
 
     num_blocks = len(pipe.transformer.blocks)
-    cond_cache = WanRollingKVCache(num_blocks=num_blocks, window_size=window_size)
-    uncond_cache = WanRollingKVCache(num_blocks=num_blocks, window_size=window_size) if do_cfg else None
+    cond_cache = WanKVCache(num_blocks=num_blocks, window_size=window_size)
+    uncond_cache = WanKVCache(num_blocks=num_blocks, window_size=window_size) if do_cfg else None
 
     p_t, _, _ = pipe.transformer.config.patch_size
     latent_h = height // pipe.vae_scale_factor_spatial

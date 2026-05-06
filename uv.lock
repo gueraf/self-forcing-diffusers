@@ -297,7 +297,7 @@ nvtx = [
 [[package]]
 name = "diffusers"
 version = "0.38.0.dev0"
-source = { git = "https://github.com/gueraf/diffusers.git?branch=wan-rolling-kv-cache#8a82df9fdc5b761294420f084b2ed52496bd06ec" }
+source = { git = "https://github.com/gueraf/diffusers.git?branch=wan-rolling-kv-cache#62c14f9c6255c79034589c399c7ce1c15a997bca" }
 dependencies = [
     { name = "filelock" },
     { name = "httpx" },

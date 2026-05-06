@@ -43,7 +43,7 @@ from self_forcing_diffusers.rolling_kv import write_kv_cache
 apply_self_forcing_wan_model_patches()
 
 from diffusers import WanTransformer3DModel
-from diffusers.models.transformers.transformer_wan import WanRollingKVCache
+from diffusers.models.transformers.transformer_wan import WanKVCache
 from diffusers.utils import export_to_video
 
 
@@ -414,7 +414,7 @@ def _generate_diffusers_latents(
     scheduler_sigmas,
     latent_frames_per_chunk,
 ):
-    cache = WanRollingKVCache(num_blocks=len(transformer.blocks), window_size=-1)
+    cache = WanKVCache(num_blocks=len(transformer.blocks), window_size=-1)
     outputs = []
 
     for chunk_start in range(0, full_noise.shape[1], latent_frames_per_chunk):

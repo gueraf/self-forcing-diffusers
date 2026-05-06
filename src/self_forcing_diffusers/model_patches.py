@@ -166,7 +166,7 @@ def apply_self_forcing_wan_model_patches():
         encoder_hidden_states: torch.Tensor,
         temb: torch.Tensor,
         rotary_emb: torch.Tensor,
-        kv_cache: "wan_mod.WanRollingKVCache | None" = None,
+        kv_cache: "wan_mod.WanKVCache | None" = None,
         block_idx: int | None = None,
     ) -> torch.Tensor:
         per_frame_modulation = temb.ndim == 4 and temb.shape[1] != hidden_states.shape[1]

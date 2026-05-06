@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "self-forcing-diffusers"
 version = "0.1.0"
-description = "Self-Forcing conversion, validation, and E2E generation using WanRollingKVCache from diffusers."
+description = "Self-Forcing conversion, validation, and E2E generation using WanKVCache from diffusers."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

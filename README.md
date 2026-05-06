@@ -1,8 +1,8 @@
 # self-forcing-diffusers
 
-Self-Forcing conversion, validation, and E2E generation utilities using `WanRollingKVCache` from diffusers.
+Self-Forcing conversion, validation, and E2E generation utilities using `WanKVCache` from diffusers.
 
-This repo keeps the Self-Forcing-specific Wan patches, checkpoint conversion logic, and upstream parity validation outside `gueraf/diffusers`. The only required `diffusers` fork dependency is the rolling KV cache branch, which is synced to current `huggingface/diffusers` plus `WanRollingKVCache` for autoregressive inference:
+This repo keeps the Self-Forcing-specific Wan patches, checkpoint conversion logic, and upstream parity validation outside `gueraf/diffusers`. The only required `diffusers` fork dependency is the rolling KV cache branch, which is synced to current `huggingface/diffusers` plus `WanKVCache` for autoregressive inference:
 
 - `https://github.com/gueraf/diffusers/tree/wan-rolling-kv-cache`
 
