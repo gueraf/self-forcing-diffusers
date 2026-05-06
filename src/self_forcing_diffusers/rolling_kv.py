@@ -60,7 +60,7 @@ def write_rolling_kv_cache(
     chunks = _chunk_sequence(latents)
     frame_offsets = _normalize_frame_offsets(transformer, chunks, frame_offset)
 
-    prev_overwrite_end = rolling_kv_cache.overwrite_end
+    prev_overwrite_newest = rolling_kv_cache.overwrite_newest
 
     try:
         for i, (chunk, chunk_frame_offset) in enumerate(zip(chunks, frame_offsets)):
@@ -81,4 +81,4 @@ def write_rolling_kv_cache(
                 attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
             )
     finally:
-        rolling_kv_cache.overwrite_end = prev_overwrite_end
+        rolling_kv_cache.overwrite_newest = prev_overwrite_newest

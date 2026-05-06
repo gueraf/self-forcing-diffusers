@@ -218,7 +218,7 @@ def _generate_chunk_velocity(
     frame_offset,
     cond_cache,
     uncond_cache,
-    overwrite_end: bool,
+    overwrite_newest: bool,
 ):
     if timestep.ndim == 0:
         timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
@@ -226,9 +226,9 @@ def _generate_chunk_velocity(
         timestep = timestep.unsqueeze(1).expand(noisy_input.shape[0], noisy_input.shape[2])
 
     def run(rolling_kv_cache, encoder_hidden_states):
-        prev_overwrite_end = rolling_kv_cache.overwrite_end
+        prev_overwrite_newest = rolling_kv_cache.overwrite_newest
         try:
-            if overwrite_end:
+            if overwrite_newest:
                 rolling_kv_cache.enable_overwrite_mode()
             else:
                 rolling_kv_cache.enable_append_mode()
@@ -241,7 +241,7 @@ def _generate_chunk_velocity(
                 attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
             )[0]
         finally:
-            rolling_kv_cache.overwrite_end = prev_overwrite_end
+            rolling_kv_cache.overwrite_newest = prev_overwrite_newest
 
     if guidance_scale > 1.0:
         velocity_cond = run(cond_cache, prompt_embeds)
@@ -396,7 +396,7 @@ def generate_autoregressive_video(
                     frame_offset=frame_offset,
                     cond_cache=cond_cache,
                     uncond_cache=uncond_cache,
-                    overwrite_end=step_idx > 0,
+                    overwrite_newest=step_idx > 0,
                 )
                 x0_pred = _convert_sf_flow_to_x0(
                     velocity,

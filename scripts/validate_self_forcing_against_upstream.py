@@ -425,7 +425,7 @@ def _generate_diffusers_latents(
         with torch.no_grad():
             for step_index, timestep in enumerate(denoising_steps):
                 model_timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
-                prev_overwrite_end = cache.overwrite_end
+                prev_overwrite_newest = cache.overwrite_newest
                 try:
                     if step_index == 0:
                         cache.enable_append_mode()
@@ -440,7 +440,7 @@ def _generate_diffusers_latents(
                         attention_kwargs={"rolling_kv_cache": cache},
                     )[0]
                 finally:
-                    cache.overwrite_end = prev_overwrite_end
+                    cache.overwrite_newest = prev_overwrite_newest
 
                 x0_pred = _convert_sf_flow_to_x0(
                     velocity,
