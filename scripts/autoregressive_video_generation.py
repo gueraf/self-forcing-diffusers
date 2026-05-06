@@ -218,7 +218,7 @@ def _generate_chunk_velocity(
     frame_offset,
     cond_cache,
     uncond_cache,
-    write_mode,
+    overwrite_end: bool,
 ):
     if timestep.ndim == 0:
         timestep = timestep.expand(noisy_input.shape[0], noisy_input.shape[2])
@@ -226,9 +226,12 @@ def _generate_chunk_velocity(
         timestep = timestep.unsqueeze(1).expand(noisy_input.shape[0], noisy_input.shape[2])
 
     def run(rolling_kv_cache, encoder_hidden_states):
-        prev_write_mode = rolling_kv_cache.write_mode
+        prev_overwrite_end = rolling_kv_cache.overwrite_end
         try:
-            rolling_kv_cache.configure_write(write_mode=write_mode)
+            if overwrite_end:
+                rolling_kv_cache.set_overwrite_mode()
+            else:
+                rolling_kv_cache.set_append_mode()
             return pipe.transformer(
                 noisy_input,
                 timestep=timestep,
@@ -238,7 +241,7 @@ def _generate_chunk_velocity(
                 attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
             )[0]
         finally:
-            rolling_kv_cache.write_mode = prev_write_mode
+            rolling_kv_cache.overwrite_end = prev_overwrite_end
 
     if guidance_scale > 1.0:
         velocity_cond = run(cond_cache, prompt_embeds)
@@ -354,7 +357,7 @@ def generate_autoregressive_video(
                 prompt_embeds,
                 cond_cache,
                 frame_offset=reference_frame_offset,
-                write_mode="append",
+                overwrite_first_chunk=False,
             )
             if do_cfg:
                 write_rolling_kv_cache(
@@ -363,7 +366,7 @@ def generate_autoregressive_video(
                     negative_prompt_embeds,
                     uncond_cache,
                     frame_offset=reference_frame_offset,
-                    write_mode="append",
+                    overwrite_first_chunk=False,
                 )
 
             for _, decoded_frames, chunk_psnr in reference_chunks:
@@ -393,7 +396,7 @@ def generate_autoregressive_video(
                     frame_offset=frame_offset,
                     cond_cache=cond_cache,
                     uncond_cache=uncond_cache,
-                    write_mode="append" if step_idx == 0 else "overwrite_end",
+                    overwrite_end=step_idx > 0,
                 )
                 x0_pred = _convert_sf_flow_to_x0(
                     velocity,
@@ -420,7 +423,7 @@ def generate_autoregressive_video(
             prompt_embeds,
             cond_cache,
             frame_offset=frame_offset,
-            write_mode="overwrite_end",
+            overwrite_first_chunk=True,
         )
         if do_cfg:
             write_rolling_kv_cache(
@@ -429,7 +432,7 @@ def generate_autoregressive_video(
                 negative_prompt_embeds,
                 uncond_cache,
                 frame_offset=frame_offset,
-                write_mode="overwrite_end",
+                overwrite_first_chunk=True,
             )
 
         all_frames.extend(_decode_latent_chunk(pipe, x0_pred, latents_mean, latents_std))

@@ -50,24 +50,27 @@ def write_rolling_kv_cache(
     rolling_kv_cache,
     *,
     frame_offset: int | list[int] | tuple[int, ...] = 0,
-    write_mode: str = "append",
+    overwrite_first_chunk: bool = False,
 ) -> None:
     """Write one or more chunks into the rolling KV cache.
 
-    The first chunk uses ``write_mode``; subsequent chunks always append (they sit at the
-    new cache end after the first write).
+    Only the first chunk respects ``overwrite_first_chunk``; subsequent chunks always append
+    (they sit at the new cache end after the first write).
     """
     chunks = _chunk_sequence(latents)
     frame_offsets = _normalize_frame_offsets(transformer, chunks, frame_offset)
 
-    prev_write_mode = rolling_kv_cache.write_mode
+    prev_overwrite_end = rolling_kv_cache.overwrite_end
 
     try:
         for i, (chunk, chunk_frame_offset) in enumerate(zip(chunks, frame_offsets)):
             patch_frames = chunk.shape[2] // transformer.config.patch_size[0]
             timestep = torch.zeros((chunk.shape[0], patch_frames), device=chunk.device, dtype=torch.long)
 
-            rolling_kv_cache.configure_write(write_mode=write_mode if i == 0 else "append")
+            if i == 0 and overwrite_first_chunk:
+                rolling_kv_cache.set_overwrite_mode()
+            else:
+                rolling_kv_cache.set_append_mode()
 
             transformer(
                 hidden_states=chunk,
@@ -78,4 +81,4 @@ def write_rolling_kv_cache(
                 attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
             )
     finally:
-        rolling_kv_cache.write_mode = prev_write_mode
+        rolling_kv_cache.overwrite_end = prev_overwrite_end
