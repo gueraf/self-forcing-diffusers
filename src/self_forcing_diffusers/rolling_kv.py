@@ -60,7 +60,6 @@ def write_rolling_kv_cache(
     chunks = _chunk_sequence(latents)
     frame_offsets = _normalize_frame_offsets(transformer, chunks, frame_offset)
 
-    prev_should_update = rolling_kv_cache.should_update
     prev_write_mode = rolling_kv_cache.write_mode
 
     try:
@@ -68,7 +67,6 @@ def write_rolling_kv_cache(
             patch_frames = chunk.shape[2] // transformer.config.patch_size[0]
             timestep = torch.zeros((chunk.shape[0], patch_frames), device=chunk.device, dtype=torch.long)
 
-            rolling_kv_cache.should_update = True
             rolling_kv_cache.configure_write(write_mode=write_mode if i == 0 else "append")
 
             transformer(
@@ -80,5 +78,4 @@ def write_rolling_kv_cache(
                 attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
             )
     finally:
-        rolling_kv_cache.should_update = prev_should_update
         rolling_kv_cache.write_mode = prev_write_mode
