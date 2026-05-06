@@ -68,9 +68,9 @@ def write_rolling_kv_cache(
             timestep = torch.zeros((chunk.shape[0], patch_frames), device=chunk.device, dtype=torch.long)
 
             if i == 0 and overwrite_first_chunk:
-                rolling_kv_cache.set_overwrite_mode()
+                rolling_kv_cache.enable_overwrite_mode()
             else:
-                rolling_kv_cache.set_append_mode()
+                rolling_kv_cache.enable_append_mode()
 
             transformer(
                 hidden_states=chunk,

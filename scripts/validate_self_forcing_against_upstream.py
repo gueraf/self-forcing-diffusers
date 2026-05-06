@@ -428,9 +428,9 @@ def _generate_diffusers_latents(
                 prev_overwrite_end = cache.overwrite_end
                 try:
                     if step_index == 0:
-                        cache.set_append_mode()
+                        cache.enable_append_mode()
                     else:
-                        cache.set_overwrite_mode()
+                        cache.enable_overwrite_mode()
                     velocity = transformer(
                         hidden_states=noisy_input,
                         timestep=model_timestep,

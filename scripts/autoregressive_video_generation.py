@@ -229,9 +229,9 @@ def _generate_chunk_velocity(
         prev_overwrite_end = rolling_kv_cache.overwrite_end
         try:
             if overwrite_end:
-                rolling_kv_cache.set_overwrite_mode()
+                rolling_kv_cache.enable_overwrite_mode()
             else:
-                rolling_kv_cache.set_append_mode()
+                rolling_kv_cache.enable_append_mode()
             return pipe.transformer(
                 noisy_input,
                 timestep=timestep,
