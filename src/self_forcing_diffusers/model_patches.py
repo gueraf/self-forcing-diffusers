@@ -166,7 +166,7 @@ def apply_self_forcing_wan_model_patches():
         encoder_hidden_states: torch.Tensor,
         temb: torch.Tensor,
         rotary_emb: torch.Tensor,
-        rolling_kv_cache: "wan_mod.WanRollingKVCache | None" = None,
+        kv_cache: "wan_mod.WanRollingKVCache | None" = None,
         block_idx: int | None = None,
     ) -> torch.Tensor:
         per_frame_modulation = temb.ndim == 4 and temb.shape[1] != hidden_states.shape[1]
@@ -195,7 +195,7 @@ def apply_self_forcing_wan_model_patches():
             norm_hidden_states = (norm_hidden_states * (1 + scale_msa.unsqueeze(2)) + shift_msa.unsqueeze(2)).flatten(
                 1, 2
             )
-            attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb, rolling_kv_cache=rolling_kv_cache, block_idx=block_idx)
+            attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb, kv_cache=kv_cache, block_idx=block_idx)
 
             hidden_states = hidden_states + (
                 attn_output.unflatten(1, (num_frames, frame_seq_len)) * gate_msa.unsqueeze(2)
@@ -217,7 +217,7 @@ def apply_self_forcing_wan_model_patches():
             return hidden_states
 
         norm_hidden_states = self.norm1(hidden_states) * (1 + scale_msa) + shift_msa
-        attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb, rolling_kv_cache=rolling_kv_cache, block_idx=block_idx)
+        attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb, kv_cache=kv_cache, block_idx=block_idx)
         hidden_states = hidden_states + attn_output * gate_msa
 
         norm_hidden_states = self.norm2(hidden_states)
@@ -271,7 +271,7 @@ def apply_self_forcing_wan_model_patches():
         if encoder_hidden_states_image is not None:
             encoder_hidden_states = torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)
 
-        rolling_kv_cache = (attention_kwargs or {}).pop("rolling_kv_cache", None)
+        kv_cache = (attention_kwargs or {}).pop("kv_cache", None)
 
         if torch.is_grad_enabled() and self.gradient_checkpointing:
             for block_idx, block in enumerate(self.blocks):
@@ -286,7 +286,7 @@ def apply_self_forcing_wan_model_patches():
             for block_idx, block in enumerate(self.blocks):
                 hidden_states = block(
                     hidden_states, encoder_hidden_states, timestep_proj, rotary_emb,
-                    rolling_kv_cache=rolling_kv_cache, block_idx=block_idx,
+                    kv_cache=kv_cache, block_idx=block_idx,
                 )
 
         if temb.ndim == 3:

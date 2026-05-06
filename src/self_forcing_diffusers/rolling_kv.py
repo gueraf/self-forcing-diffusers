@@ -43,11 +43,11 @@ def _normalize_frame_offsets(
 
 
 @torch.no_grad()
-def write_rolling_kv_cache(
+def write_kv_cache(
     transformer: torch.nn.Module,
     latents: torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...],
     encoder_hidden_states: torch.Tensor,
-    rolling_kv_cache,
+    kv_cache,
     *,
     frame_offset: int | list[int] | tuple[int, ...] = 0,
     overwrite_first_chunk: bool = False,
@@ -60,7 +60,7 @@ def write_rolling_kv_cache(
     chunks = _chunk_sequence(latents)
     frame_offsets = _normalize_frame_offsets(transformer, chunks, frame_offset)
 
-    prev_overwrite_newest = rolling_kv_cache.overwrite_newest
+    prev_overwrite_newest = kv_cache.overwrite_newest
 
     try:
         for i, (chunk, chunk_frame_offset) in enumerate(zip(chunks, frame_offsets)):
@@ -68,9 +68,9 @@ def write_rolling_kv_cache(
             timestep = torch.zeros((chunk.shape[0], patch_frames), device=chunk.device, dtype=torch.long)
 
             if i == 0 and overwrite_first_chunk:
-                rolling_kv_cache.enable_overwrite_mode()
+                kv_cache.enable_overwrite_mode()
             else:
-                rolling_kv_cache.enable_append_mode()
+                kv_cache.enable_append_mode()
 
             transformer(
                 hidden_states=chunk,
@@ -78,7 +78,7 @@ def write_rolling_kv_cache(
                 encoder_hidden_states=encoder_hidden_states,
                 frame_offset=chunk_frame_offset,
                 return_dict=False,
-                attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
+                attention_kwargs={"kv_cache": kv_cache},
             )
     finally:
-        rolling_kv_cache.overwrite_newest = prev_overwrite_newest
+        kv_cache.overwrite_newest = prev_overwrite_newest

@@ -30,7 +30,7 @@ from transformers import AutoTokenizer, UMT5EncoderModel
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from self_forcing_diffusers.model_patches import apply_self_forcing_wan_model_patches
-from self_forcing_diffusers.rolling_kv import write_rolling_kv_cache
+from self_forcing_diffusers.rolling_kv import write_kv_cache
 
 
 apply_self_forcing_wan_model_patches()
@@ -225,23 +225,23 @@ def _generate_chunk_velocity(
     elif timestep.ndim == 1:
         timestep = timestep.unsqueeze(1).expand(noisy_input.shape[0], noisy_input.shape[2])
 
-    def run(rolling_kv_cache, encoder_hidden_states):
-        prev_overwrite_newest = rolling_kv_cache.overwrite_newest
+    def run(kv_cache, encoder_hidden_states):
+        prev_overwrite_newest = kv_cache.overwrite_newest
         try:
             if overwrite_newest:
-                rolling_kv_cache.enable_overwrite_mode()
+                kv_cache.enable_overwrite_mode()
             else:
-                rolling_kv_cache.enable_append_mode()
+                kv_cache.enable_append_mode()
             return pipe.transformer(
                 noisy_input,
                 timestep=timestep,
                 encoder_hidden_states=encoder_hidden_states,
                 frame_offset=frame_offset,
                 return_dict=False,
-                attention_kwargs={"rolling_kv_cache": rolling_kv_cache},
+                attention_kwargs={"kv_cache": kv_cache},
             )[0]
         finally:
-            rolling_kv_cache.overwrite_newest = prev_overwrite_newest
+            kv_cache.overwrite_newest = prev_overwrite_newest
 
     if guidance_scale > 1.0:
         velocity_cond = run(cond_cache, prompt_embeds)
@@ -351,7 +351,7 @@ def generate_autoregressive_video(
         if reference_chunks and chunk_idx == conditioning_start_chunk:
             conditioning_latents = [chunk_latents for chunk_latents, _, _ in reference_chunks]
             reference_frame_offset = chunk_idx * patch_frames_per_chunk
-            write_rolling_kv_cache(
+            write_kv_cache(
                 pipe.transformer,
                 conditioning_latents,
                 prompt_embeds,
@@ -360,7 +360,7 @@ def generate_autoregressive_video(
                 overwrite_first_chunk=False,
             )
             if do_cfg:
-                write_rolling_kv_cache(
+                write_kv_cache(
                     pipe.transformer,
                     conditioning_latents,
                     negative_prompt_embeds,
@@ -417,7 +417,7 @@ def generate_autoregressive_video(
                         scheduler_sigmas,
                     )
 
-        write_rolling_kv_cache(
+        write_kv_cache(
             pipe.transformer,
             x0_pred,
             prompt_embeds,
@@ -426,7 +426,7 @@ def generate_autoregressive_video(
             overwrite_first_chunk=True,
         )
         if do_cfg:
-            write_rolling_kv_cache(
+            write_kv_cache(
                 pipe.transformer,
                 x0_pred,
                 negative_prompt_embeds,

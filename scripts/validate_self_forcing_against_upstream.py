@@ -37,7 +37,7 @@ from self_forcing_diffusers.hf_assets import (
     resolve_wan_vae_path,
 )
 from self_forcing_diffusers.model_patches import apply_self_forcing_wan_model_patches
-from self_forcing_diffusers.rolling_kv import write_rolling_kv_cache
+from self_forcing_diffusers.rolling_kv import write_kv_cache
 
 
 apply_self_forcing_wan_model_patches()
@@ -437,7 +437,7 @@ def _generate_diffusers_latents(
                         encoder_hidden_states=prompt_embeds,
                         frame_offset=frame_offset,
                         return_dict=False,
-                        attention_kwargs={"rolling_kv_cache": cache},
+                        attention_kwargs={"kv_cache": cache},
                     )[0]
                 finally:
                     cache.overwrite_newest = prev_overwrite_newest
@@ -463,7 +463,7 @@ def _generate_diffusers_latents(
                         scheduler_sigmas,
                     )
 
-        write_rolling_kv_cache(
+        write_kv_cache(
             transformer,
             x0_pred,
             prompt_embeds,
