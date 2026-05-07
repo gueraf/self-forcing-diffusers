@@ -359,3 +359,15 @@ def apply_self_forcing_wan_model_patches():
     torch.nn.RMSNorm.forward = _wan_rms_norm_forward
 
     _PATCHES_APPLIED = True
+
+    print(
+        "[self-forcing-diffusers] Patched diffusers Wan model for upstream-parity inference:\n"
+        "  - torch.nn.RMSNorm.forward: compute RMS in float32 (Q/K norms drift in bfloat16 across chunks)\n"
+        "  - WanRotaryPosEmbed.{__init__,forward}: float64 RoPE freqs and `frame_offset` plumbing\n"
+        "  - WanTimeTextImageEmbedding.{__init__,forward}: float64 timestep sin/cos embedding\n"
+        "  - WanTransformerBlock.forward: upstream modulation/RMS-cast order\n"
+        "  - WanTransformer3DModel.forward: drop-in to thread `kv_cache` through attention_kwargs\n"
+        "Without these, the diffusers path drifts from the original guandeh17/Self-Forcing checkpoint,\n"
+        "which manifests as a 'jumpy' autoregressive rollout. Validate parity with:\n"
+        "  uv run python scripts/validate_self_forcing_against_upstream.py"
+    )
