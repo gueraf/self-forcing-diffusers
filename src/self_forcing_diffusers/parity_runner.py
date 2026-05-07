@@ -262,9 +262,35 @@ def build_parser():
     return parser
 
 
+def _assert_device_available(label: str, value: str) -> None:
+    if not value.startswith("cuda"):
+        return
+    import torch
+
+    if not torch.cuda.is_available():
+        raise SystemExit(
+            f"{label}={value!r} requested but no CUDA devices are visible. "
+            f"Pass {label}=cpu, or set CUDA_VISIBLE_DEVICES to expose a GPU."
+        )
+
+    parsed_index = 0 if value == "cuda" else int(value.split(":", 1)[1])
+    available = torch.cuda.device_count()
+    if parsed_index >= available:
+        raise SystemExit(
+            f"{label}={value!r} requested but only {available} CUDA device(s) visible "
+            f"(valid range cuda:0..cuda:{max(available - 1, 0)}). "
+            f"Pass {label}=cpu or {label}=cuda:0 instead."
+        )
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
+
+    _assert_device_available("--device", args.device)
+    _assert_device_available("--text_encoder_device", args.text_encoder_device)
+    _assert_device_available("--vae_device", args.vae_device)
+    _assert_device_available("--conversion_device", args.conversion_device)
 
     repo_root = _repo_root()
     run_dir = pathlib.Path(args.run_dir).expanduser().resolve() if args.run_dir is not None else _default_run_dir()

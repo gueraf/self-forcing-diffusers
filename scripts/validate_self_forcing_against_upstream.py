@@ -468,6 +468,20 @@ def main():
     parser.add_argument("--width", type=int, default=832)
     args = parser.parse_args()
 
+    for label, value in (("--device", args.device), ("--text_encoder_device", args.text_encoder_device)):
+        if not value.startswith("cuda"):
+            continue
+        if not torch.cuda.is_available():
+            raise SystemExit(f"{label}={value!r} requested but no CUDA devices are visible.")
+        index = 0 if value == "cuda" else int(value.split(":", 1)[1])
+        available = torch.cuda.device_count()
+        if index >= available:
+            raise SystemExit(
+                f"{label}={value!r} requested but only {available} CUDA device(s) visible "
+                f"(valid range cuda:0..cuda:{max(available - 1, 0)}). "
+                f"Pass {label}=cpu or {label}=cuda:0 instead."
+            )
+
     output_dir = pathlib.Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
