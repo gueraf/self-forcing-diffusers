@@ -23,7 +23,6 @@ import argparse
 import os
 import sys
 
-import numpy as np
 import torch
 from transformers import AutoTokenizer, UMT5EncoderModel
 
@@ -68,7 +67,12 @@ def _get_latent_stats(pipe, device):
     return latents_mean, latents_std
 
 
-def _decode_latent_chunk(pipe, latents, latents_mean, latents_std):
+def _decode_latents(pipe, latents, latents_mean, latents_std):
+    """Decode the full latent stack in one VAE call.
+
+    Per-chunk decoding would reset the Wan VAE's causal feat_cache between chunks and produce
+    a visible cut at every chunk boundary. Decoding once at the end keeps temporal continuity.
+    """
     vae_device = next(pipe.vae.parameters()).device
     decode_latents = latents.to(device=vae_device, dtype=pipe.vae.dtype)
     latents_mean = latents_mean.to(device=vae_device, dtype=torch.float32)
@@ -77,15 +81,6 @@ def _decode_latent_chunk(pipe, latents, latents_mean, latents_std):
     with torch.no_grad():
         video = pipe.vae.decode(decode_latents, return_dict=False)[0]
     return pipe.video_processor.postprocess_video(video, output_type="pil")[0]
-
-
-def _compute_psnr(reference_frames, candidate_frames):
-    reference = np.stack([np.asarray(frame, dtype=np.float32) for frame in reference_frames], axis=0)
-    candidate = np.stack([np.asarray(frame, dtype=np.float32) for frame in candidate_frames], axis=0)
-    mse = np.mean((reference - candidate) ** 2)
-    if mse == 0:
-        return float("inf")
-    return 20.0 * np.log10(255.0) - 10.0 * np.log10(mse)
 
 
 def _assert_valid_self_forcing_transformer(transformer):
@@ -171,11 +166,9 @@ def _encode_reference_chunk(pipe, frames, height, width, latents_mean, latents_s
     with torch.no_grad():
         encoded = _retrieve_latents(pipe.vae.encode(reference_video.to(dtype=pipe.vae.dtype)), sample_mode="argmax")
     encoded = (encoded.to(torch.float32) - latents_mean) * latents_std
-    decoded_frames = _decode_latent_chunk(pipe, encoded, latents_mean, latents_std)
     return (
         encoded.to(device=transformer_device, dtype=pipe.transformer.dtype),
-        decoded_frames,
-        _compute_psnr(reference_frames, decoded_frames),
+        reference_frames,
     )
 
 
@@ -300,16 +293,14 @@ def generate_autoregressive_video(
             )
         if conditioning_start_chunk + len(reference_chunks) > num_chunks:
             raise ValueError("`conditioning_video` would write past `num_chunks`.")
-        psnrs = [chunk_psnr for _, _, chunk_psnr in reference_chunks]
-        print(f"Conditioning chunk PSNR: min={min(psnrs):.2f}dB mean={sum(psnrs) / len(psnrs):.2f}dB")
 
     generator = torch.Generator(device=device).manual_seed(seed)
-    all_frames = []
+    chunk_latents = []
     chunk_idx = 0
 
     while chunk_idx < num_chunks:
         if reference_chunks and chunk_idx == conditioning_start_chunk:
-            conditioning_latents = [chunk_latents for chunk_latents, _, _ in reference_chunks]
+            conditioning_latents = [latents for latents, _ in reference_chunks]
             reference_frame_offset = chunk_idx * patch_frames_per_chunk
             write_kv_cache(
                 pipe.transformer,
@@ -329,9 +320,9 @@ def generate_autoregressive_video(
                     overwrite_first_chunk=False,
                 )
 
-            for _, decoded_frames, chunk_psnr in reference_chunks:
-                all_frames.extend(decoded_frames)
-                print(f"Injected reference chunk at index {chunk_idx}: decoded PSNR={chunk_psnr:.2f}dB")
+            for latents, _ in reference_chunks:
+                chunk_latents.append(latents)
+                print(f"Injected reference chunk at index {chunk_idx}")
                 chunk_idx += 1
             continue
 
@@ -395,15 +386,17 @@ def generate_autoregressive_video(
                 overwrite_first_chunk=True,
             )
 
-        all_frames.extend(_decode_latent_chunk(pipe, x0_pred, latents_mean, latents_std))
-        print(f"Generated chunk {chunk_idx + 1}/{num_chunks} ({len(all_frames)} frames total)")
+        chunk_latents.append(x0_pred)
+        print(f"Generated chunk {chunk_idx + 1}/{num_chunks}")
         chunk_idx += 1
 
     cond_cache.reset()
     if uncond_cache is not None:
         uncond_cache.reset()
 
-    return all_frames
+    print(f"Decoding {len(chunk_latents)} chunks ...")
+    full_latents = torch.cat(chunk_latents, dim=2).to(device=vae_device, dtype=torch.float32)
+    return _decode_latents(pipe, full_latents, latents_mean, latents_std)
 
 
 def main():
