@@ -1,8 +1,11 @@
 # self-forcing-diffusers
 
-Self-Forcing conversion, validation, and E2E generation utilities using `WanKVCache` from diffusers.
+Tools to run the Self-Forcing causal Wan model on top of the upstream `diffusers` `WanKVCache` API,
+plus an end-to-end test that confirms the diffusers path stays bit-exact against the original
+[`guandeh17/Self-Forcing`](https://github.com/guandeh17/Self-Forcing) repo.
 
-This repo keeps the Self-Forcing-specific Wan patches, checkpoint conversion logic, and upstream parity validation outside `gueraf/diffusers`. The only required `diffusers` fork dependency is the rolling KV cache branch, which is synced to current `huggingface/diffusers` plus `WanKVCache` for autoregressive inference:
+The only required `diffusers` fork dependency is the rolling KV cache branch, which tracks
+current `huggingface/diffusers` plus `WanKVCache`:
 
 - `https://github.com/gueraf/diffusers/tree/wan-rolling-kv-cache`
 
@@ -12,78 +15,72 @@ This repo keeps the Self-Forcing-specific Wan patches, checkpoint conversion log
 uv sync
 ```
 
-The `pyproject.toml` pins `diffusers` to `gueraf/diffusers@wan-rolling-kv-cache` via `tool.uv.sources`.
+`pyproject.toml` pins `diffusers` to `gueraf/diffusers@wan-rolling-kv-cache` via `tool.uv.sources`.
 
-## Main Commands
-
-Run the full parity flow in one command:
-
-```bash
-uv run sf-e2e-parity \
-  --device cuda:1 \
-  --text_encoder_device cpu \
-  --vae_device cpu
-```
-
-That command:
-
-- converts the original Self-Forcing checkpoint into diffusers format
-- validates exact parity against `guandeh17/Self-Forcing`
-- runs the public diffusers autoregressive export path and writes a roughly `25s` `clean_export.mp4` by default
-- bundles the reports and videos
-- uploads the artifact bundle, manifest, and the three videos as standalone assets (`<prefix>.clean_export.mp4`, `<prefix>.validation_diffusers.mp4`, `<prefix>.validation_original.mp4`) to the `parity-artifacts` GitHub release in `gueraf/self-forcing-diffusers`
-
-The remote artifact path uses GitHub release assets rather than Git LFS, so the bundle stays under the per-file release limit and does not consume LFS storage/bandwidth quota.
-
-You can override the long export length with either `--clean_export_duration_seconds` or `--clean_export_num_chunks`. The shorter exact upstream parity check still uses `--num_chunks`, which defaults to `3`.
-
-If `--upstream_repo_path` is omitted, the original repo is cloned or refreshed automatically under `~/.cache/self-forcing-diffusers/upstream-repos/Self-Forcing`.
-
-Convert a checkpoint:
-
-```bash
-uv run python scripts/convert_self_forcing_to_diffusers.py \
-  --output_path ./artifacts/self_forcing_diffusers
-```
-
-If `--checkpoint_path` is omitted, the script downloads `checkpoints/self_forcing_dmd.pt` from `gdhe17/Self-Forcing`.
-
-Run autoregressive generation:
+## Generate a video
 
 ```bash
 uv run python scripts/autoregressive_video_generation.py \
-  --model_id ./artifacts/self_forcing_diffusers \
   --prompt "A cat walks on the grass, realistic style, high quality" \
-  --output ./artifacts/autoregressive.mp4
+  --output ./autoregressive.mp4
 ```
 
-The standalone autoregressive script now defaults to `45` chunks at `16fps`, which is about `25.3s` of video with the default `9` frames per chunk.
+The default `--model_id` is `gueraf/Self-Forcing-diffusers` (already converted, on the Hub), so no
+manual conversion is needed for plain inference. Defaults: `45` chunks, `9` frames/chunk, `16fps`,
+~25s of video, unbounded KV cache. Pass `--device`, `--text_encoder_device`, `--vae_device` to
+split across GPUs if you don't have a single 80GB+ card.
 
-Validate directly against the original upstream repo:
+To start from a real reference clip, pass `--conditioning_video path/to/clip.mp4
+--conditioning_start_chunk 0`; the reference is VAE-encoded into the cache and generation
+continues from there.
+
+## Verify parity against upstream
+
+```bash
+uv run sf-e2e-parity \
+  --device cuda:0 \
+  --text_encoder_device cuda:1 \
+  --vae_device cuda:1
+```
+
+`sf-e2e-parity` runs the full check in one command:
+
+1. converts the original Self-Forcing checkpoint into diffusers format,
+2. runs both the upstream causal-DMD path and the diffusers `WanKVCache` path from the same noise
+   and seed and asserts `max_abs_diff = 0.0` on the latents,
+3. exports a longer `clean_export.mp4` (default ~25s) via the diffusers script,
+4. bundles the reports and videos and uploads the artifact bundle plus the three videos to the
+   `parity-artifacts` GitHub release on `gueraf/self-forcing-diffusers`.
+
+Override the long export length with `--clean_export_duration_seconds` or
+`--clean_export_num_chunks`. The shorter parity check uses `--num_chunks` (default `3`).
+
+If `--upstream_repo_path` is omitted, the original repo is cloned or refreshed automatically under
+`~/.cache/self-forcing-diffusers/upstream-repos/Self-Forcing`.
+
+The same parity check is also runnable on its own without the conversion / export / upload steps:
 
 ```bash
 uv run python scripts/validate_self_forcing_against_upstream.py \
-  --upstream_repo_path /path/to/Self-Forcing \
-  --diffusers_model_path ./artifacts/self_forcing_diffusers \
-  --prompt "A cat walks on the grass, realistic style, high quality" \
-  --output_dir ./artifacts/upstream_compare
+  --diffusers_model_path gueraf/Self-Forcing-diffusers \
+  --output_dir ./upstream_compare
 ```
 
-If `--checkpoint_path`, `--wan_model_config`, or `--vae_path` are omitted, the validator downloads them automatically from Hugging Face:
+## Convert a checkpoint manually
 
-- `gdhe17/Self-Forcing` for `checkpoints/self_forcing_dmd.pt`
-- `Wan-AI/Wan2.1-T2V-1.3B` for `config.json`, `Wan2.1_VAE.pth`, and the upstream tokenizer/text-encoder weights used by the default `--text_encoder_source upstream` flow
+```bash
+uv run python scripts/convert_self_forcing_to_diffusers.py \
+  --output_path ./self_forcing_diffusers
+```
+
+If `--checkpoint_path` is omitted, the script downloads `checkpoints/self_forcing_dmd.pt` from
+`gdhe17/Self-Forcing`.
 
 ## Tests
-
-Unit tests:
 
 ```bash
 uv run python -m unittest tests.test_hf_assets tests.test_conversion tests.test_validation_helpers tests.test_parity_runner -v
 ```
 
-The heavier E2E coverage lives in the scripts themselves and expects:
-
-- the original `guandeh17/Self-Forcing` repo checked out locally
-- the upstream Self-Forcing checkpoint
-- the Wan base model assets
+These are unit tests; the parity check above is the heavy E2E coverage and expects the original
+`guandeh17/Self-Forcing` repo and the upstream checkpoint/Wan VAE weights.
