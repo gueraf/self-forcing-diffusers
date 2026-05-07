@@ -37,11 +37,12 @@ continues from there.
 ## Verify parity against upstream
 
 ```bash
-uv run sf-e2e-parity \
-  --device cuda:0 \
-  --text_encoder_device cuda:1 \
-  --vae_device cuda:1
+uv run sf-e2e-parity
 ```
+
+Defaults to `--device cuda:0 --text_encoder_device cpu --vae_device cpu`. On a 2-GPU box,
+move the text encoder and VAE off the diffusion device with `--text_encoder_device cuda:1
+--vae_device cuda:1` for ~25% speedup.
 
 `sf-e2e-parity` runs the full check in one command:
 

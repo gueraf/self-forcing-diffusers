@@ -243,7 +243,7 @@ def build_parser():
     parser.add_argument("--upstream_repo_url", type=str, default=DEFAULT_UPSTREAM_REPO_URL)
     parser.add_argument("--upstream_repo_ref", type=str, default=DEFAULT_UPSTREAM_REPO_REF)
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--text_encoder_device", type=str, default="cuda:1")
+    parser.add_argument("--text_encoder_device", type=str, default="cpu")
     parser.add_argument("--vae_device", type=str, default="cpu")
     parser.add_argument("--conversion_device", type=str, default="cpu")
     parser.add_argument("--seed", type=int, default=1234)

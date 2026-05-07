@@ -460,7 +460,7 @@ def main():
     parser.add_argument("--prompt", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--text_encoder_device", type=str, default="cuda:1")
+    parser.add_argument("--text_encoder_device", type=str, default="cpu")
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--num_chunks", type=int, default=3)
     parser.add_argument("--frames_per_chunk", type=int, default=9)
